@@ -4,10 +4,10 @@ ootleRouter charges API callers per use in TARI on [Tari Ootle](https://tari.com
 payment-lane contract with no admin and no owner.
 
 A caller escrows TARI in a lane to the router's provider key once, on-chain. Each API request then carries a voucher,
-which the caller signs off-chain, for the running total it allows the router to have claimed. The router checks the
-voucher, holds a small reserve while the turn runs, and charges the turn's real cost (tokens and minutes, priced in
-µT) when it finishes. From time to time the router claims the latest voucher on-chain. The caller can close a lane
-and get back whatever wasn't claimed.
+which the caller signs off-chain: a cap on the running total the router may claim. The router checks the voucher,
+holds a small reserve while the turn runs, and charges the turn's real cost (tokens and minutes, priced in µT) when
+it finishes. From time to time it claims on-chain what it has charged, never more than the cap. The caller can close
+a lane and get back whatever wasn't claimed.
 
 The Console's own turns are free; only API-key callers pay.
 
@@ -29,7 +29,8 @@ docker run -d --name ootlerouter -p 127.0.0.1:3000:3000 -v ootlerouter:/data \
   ootlerouter
 ```
 
-Optional: `OOTLE_RESERVE` (µT a turn holds, default 10000), `OOTLE_PRICES` (a prices file), and, to claim
+Optional: `OOTLE_RESERVE` (µT a turn holds, default 10000), `OOTLE_PRICES` (a prices file),
+`OOTLE_CORS_ORIGINS` (pages that may call the API from a browser, e.g. `https://ootlebook.com`), and, to claim
 automatically, `WALLETD_URL` (and `WALLETD_TOKEN`) plus `OOTLE_ACCOUNT` (a walletd account whose key is `OOTLE_PROVIDER_KEY`;
 `OOTLE_CLAIM_MIN` µT, default 100000, `OOTLE_CLAIM_EVERY_S`, default 600). The ledger lives in `/data/ootle-pay.json`.
 
@@ -49,12 +50,18 @@ curl -H "Authorization: Bearer $KEY" $BASE/v1/ootle/lanes/<lane>  # charged so f
 Raise the voucher's total as you go. A refused turn answers `402` with the total a voucher needs
 (`voucher_cum_needed`). To stop, run `close`, then `refund` once the close window (6 epochs) has passed.
 
-A voucher authorises at most its total, so that is the most a router can take. The charges themselves are the
-router's own count: see them at `/v1/ootle/lanes/<lane>`, and keep your vouchers close to what you have used.
+A voucher caps the claim, so its total is the most a router can take. The charges themselves are the router's own
+count: see them at `/v1/ootle/lanes/<lane>`, and keep your vouchers close to what you have used (charged plus what
+running tasks hold plus one reserve, as [ootlebook.com/router](https://ootlebook.com/router) does).
 
 ## Status
 
-Built and tested against the Ootle engine (`cargo test`, `npm test` in `pay/`, `gateway/tests/test_ootle_pay.py`).
-**Not deployed yet:** Esmeralda was reset on 2026-11-02 and its faucet has been empty since, so `deployments/` is
-empty. To deploy: `cargo build --release --target wasm32-unknown-unknown -p ootlerouter_lanes`, then
-`node deploy/publish.mjs --account A` (a dry run) and again with `--live`.
+Tested end to end on a private one-machine Ootle network (`tari_swarm_daemon`, Ootle 0.47 development build, same
+transaction format as 0.49): published, a lane opened, paid turns run through the Docker image on a local model, the
+router claimed exactly what it charged, the lane closed and refunded, balances reconciled to the µT. Also driven from
+the ootlebook.com/router page in Chrome.
+
+**Not on a public network yet:** Esmeralda was reset on 2026-11-02 and its faucet has been empty since. To deploy:
+`cargo build --release --target wasm32-unknown-unknown -p ootlerouter_lanes`, then
+`node deploy/publish.mjs --account A --network esmeralda` (a dry run) and again with `--live`. It writes
+`deployments/<network>.json`, which the CLI and the payment service read (`OOTLE_LANES_DEPLOYMENT`).

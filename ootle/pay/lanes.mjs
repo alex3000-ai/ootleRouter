@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { callMethod, callMethodWs, cbor, depositReturned, withdrawTari } from "./tx.mjs";
+import { callMethod, callMethodWs, cbor, depositReturned, NETWORKS, withdrawTari } from "./tx.mjs";
 import { plainBody } from "./encoded.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -16,6 +16,13 @@ export function deployment() {
   const hub = process.env.OOTLE_LANES_COMPONENT || file.component;
   if (!hub) throw new Error("no OotleRouterLanes component configured (deployments/esmeralda.json or OOTLE_LANES_COMPONENT)");
   return { ...file, hub, indexer: (process.env.OOTLE_INDEXER || file.indexer || "https://ootle-indexer-a.tari.com").replace(/\/+$/, "") };
+}
+
+/** Where transactions go: the deployment's network byte and indexer, for submitInstructions. */
+export function txTarget() {
+  const { network = "esmeralda", indexer } = deployment();
+  if (!(network in NETWORKS)) throw new Error(`unknown network ${network}`);
+  return { network: NETWORKS[network], indexer };
 }
 
 export async function indexer(path) {
@@ -77,8 +84,9 @@ export const calls = {
     inputs: [],
   }),
   fund: (account, amount, n) => ({ instructions: paidCall(account, amount, "fund_lane", [cbor.uint(n)]), inputs: [writes(n)] }),
-  claim: (account, voucher) => ({
-    instructions: [hubCall("claim", [cbor.uint(voucher.lane), cbor.uint(voucher.spent_cum), cbor.signature(voucher)]), ...depositReturned(account)],
+  /** Claims up to `claimCum` µT in all, within `voucher`'s cap. */
+  claim: (account, voucher, claimCum = voucher.spent_cum) => ({
+    instructions: [hubCall("claim", [cbor.uint(voucher.lane), cbor.uint(claimCum), cbor.uint(voucher.spent_cum), cbor.signature(voucher)]), ...depositReturned(account)],
     inputs: [writes(voucher.lane)],
   }),
   requestClose: (n) => ({ instructions: [hubCall("request_close", [cbor.uint(n)])], inputs: [writes(n)] }),

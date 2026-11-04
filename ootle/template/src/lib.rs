@@ -1,9 +1,9 @@
 //! OotleRouterLanes: pay-per-use payment lanes between any buyer and any provider on Ootle, in one component with
 //! no admin and no owner. The close window is fixed when it is created.
 //!
-//! A buyer escrows funds for a provider (named by its account key) and signs vouchers off-chain for the cumulative
-//! amount spent, with a voucher key it names when opening the lane. The provider claims the latest voucher whenever
-//! it likes. To stop, the buyer requests a close and refunds the rest once the close window has passed, or at once
+//! A buyer escrows funds for a provider (named by its account key) and signs vouchers off-chain, each capping the
+//! cumulative amount the provider may claim, with a voucher key it names when opening the lane. The provider claims
+//! up to its latest voucher's cap whenever it likes, so it can take what it has earned and no more than that cap. To stop, the buyer requests a close and refunds the rest once the close window has passed, or at once
 //! if the provider releases the lane. The buyer and provider are the keys that sign their transactions.
 //! Lanes are non-fungibles numbered 0, 1, 2… in page vaults of 256, so a call costs the same however many there are.
 //! Escrow sits in one vault: `escrow == sum over lanes of (deposited - claimed - refunded)`.
@@ -16,7 +16,7 @@ pub const VOUCHER_DOMAIN: &[u8] = b"ootlerouter-voucher-v1";
 /// Lanes per page vault.
 pub const PAGE_SIZE: u64 = 256;
 
-/// What a lane's voucher key signs: the cumulative amount the provider may have claimed.
+/// What a lane's voucher key signs: the most the provider may have claimed in all.
 pub fn voucher_message(hub: &ComponentAddress, lane: u64, spent_cum: Amount) -> Vec<u8> {
     format!("{hub}|{lane}|{}", spent_cum.to_u128()).into_bytes()
 }
@@ -124,18 +124,19 @@ mod ootlerouter_lanes {
             self.save(lane, state, "lanes.funded");
         }
 
-        /// Pays the provider for a voucher over `spent_cum`, the cumulative amount the buyer has authorised; the
-        /// provider receives the part not yet claimed. Works while a close is pending, until the buyer refunds.
-        pub fn claim(&mut self, lane: u64, spent_cum: Amount, voucher: SignaturePayload) -> Bucket {
+        /// Brings what the provider has claimed in all up to `claim_cum`, within a voucher capping it at `voucher_cum`;
+        /// the provider receives the difference. Works while a close is pending, until the buyer refunds.
+        pub fn claim(&mut self, lane: u64, claim_cum: Amount, voucher_cum: Amount, voucher: SignaturePayload) -> Bucket {
             let (info, mut state) = self.load(lane);
             signed_by(&info.provider_key);
             assert!(!state.closed, "lane is closed");
-            assert!(spent_cum > state.claimed, "voucher does not exceed the amount already claimed");
-            assert!(spent_cum <= state.deposited, "voucher exceeds the lane's escrow");
-            let message = voucher_message(&CallerContext::current_component_address(), lane, spent_cum);
+            assert!(claim_cum > state.claimed, "claim does not exceed the amount already claimed");
+            assert!(claim_cum <= voucher_cum, "claim exceeds the voucher");
+            assert!(claim_cum <= state.deposited, "claim exceeds the lane's escrow");
+            let message = voucher_message(&CallerContext::current_component_address(), lane, voucher_cum);
             assert!(SignatureVerifier::with_domain(VOUCHER_DOMAIN).verify(&PublicKey::Ristretto25519(info.voucher_key), &message, &voucher), "invalid voucher signature");
-            let payout = spent_cum.checked_sub(state.claimed).expect("checked above");
-            state.claimed = spent_cum;
+            let payout = claim_cum.checked_sub(state.claimed).expect("checked above");
+            state.claimed = claim_cum;
             self.save(lane, state, "lanes.claimed");
             self.escrow.withdraw(payout)
         }

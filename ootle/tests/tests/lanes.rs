@@ -119,8 +119,13 @@ impl Hub {
         schnorr(key, &voucher_message(&self.hub, lane, spent.into()))
     }
 
+    /// A claim of the whole voucher.
     fn claim(&self, p: &Party, lane: u64, spent: u64, voucher: SignaturePayload) -> Transaction {
-        self.payout(p, "claim", args![lane, Amount::from(spent), voucher])
+        self.claim_part(p, lane, spent, spent, voucher)
+    }
+
+    fn claim_part(&self, p: &Party, lane: u64, claim: u64, cap: u64, voucher: SignaturePayload) -> Transaction {
+        self.payout(p, "claim", args![lane, Amount::from(claim), Amount::from(cap), voucher])
     }
 
     fn lane(&mut self, lane: u64) -> LaneState {
@@ -167,14 +172,24 @@ fn claims_pay_the_provider_and_escrow_is_conserved() {
     h.fails(tx, &provider, "does not exceed");
     let tx = h.claim(&provider, 0, 10_001, h.voucher(&vk, 0, 10_001));
     h.fails(tx, &provider, "exceeds the lane's escrow");
-    let tx = h.claim(&provider, 0, 6_000, h.voucher(&new_key(), 0, 6_000));
+    // A voucher caps the claim: the provider can take part of it, then more, never past it.
+    let tx = h.claim_part(&provider, 0, 5_500, 8_000, h.voucher(&vk, 0, 8_000));
+    h.ok(tx, &provider);
+    let tx = h.claim_part(&provider, 0, 8_001, 8_000, h.voucher(&vk, 0, 8_000));
+    h.fails(tx, &provider, "claim exceeds the voucher");
+    let tx = h.claim_part(&provider, 0, 6_000, 8_000, h.voucher(&vk, 0, 7_000));
+    h.fails(tx, &provider, "invalid voucher signature");
+    let tx = h.claim_part(&provider, 0, 8_000, 8_000, h.voucher(&vk, 0, 8_000));
+    h.ok(tx, &provider);
+    assert_eq!(h.lane(0).claimed, Amount::from(8_000u64));
+    let tx = h.claim(&provider, 0, 9_000, h.voucher(&new_key(), 0, 9_000));
     h.fails(tx, &provider, "invalid voucher signature");
     // A voucher for one lane can't be spent on another.
     let tx = h.claim(&provider, 0, 600, h.voucher(&vk, 1, 600));
     h.fails(tx, &provider, "does not exceed");
     let tx = h.claim(&provider, 1, 600, h.voucher(&vk, 0, 600));
     h.fails(tx, &provider, "invalid voucher signature");
-    let tx = h.claim(&buyer, 0, 6_000, h.voucher(&vk, 0, 6_000));
+    let tx = h.claim(&buyer, 0, 9_000, h.voucher(&vk, 0, 9_000));
     h.fails(tx, &buyer, "only the lane's own key");
     let tx = h.paid(&buyer, 1_000, "open_lane", args![pk(&buyer.key), pk(&vk)]);
     h.fails(tx, &buyer, "cannot open a lane to yourself");
@@ -251,6 +266,6 @@ fn vouchers_from_the_javascript_client_are_accepted() {
     let (nonce, s) = out.split_once(' ').expect("nonce and signature");
     let (nonce, s) = (RistrettoPublicKey::from_hex(nonce).expect("nonce"), RistrettoSecretKey::from_hex(s).expect("s"));
     let voucher = SignaturePayload::RistrettoSchnorrBlake2b(RistrettoSchnorr::new(nonce, s).to_byte_type());
-    let tx = h.claim(&provider, lane, 2_500, voucher);
+    let tx = h.claim_part(&provider, lane, 1_000, 2_500, voucher);
     h.ok(tx, &provider);
 }

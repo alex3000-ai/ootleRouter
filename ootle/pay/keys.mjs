@@ -1,7 +1,6 @@
-// Voucher keys and signatures, made on your own machine.
+// Voucher keys and signatures, made on your own machine (Node or a browser).
 // Ristretto Schnorr as the template verifies it: e = Blake2b-512(domain || R || P || message) mod l, s = r + e·k.
 
-import { randomBytes } from "node:crypto";
 import { ristretto255 } from "@noble/curves/ed25519.js";
 import { blake2b } from "@noble/hashes/blake2.js";
 
@@ -10,12 +9,13 @@ export const VOUCHER_DOMAIN = "ootlerouter-voucher-v1";
 const Point = ristretto255.Point;
 const ORDER = Point.Fn.ORDER;
 const enc = new TextEncoder();
-const hex = (b) => Buffer.from(b).toString("hex");
+const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 const fromHex = (h) => {
   const clean = String(h).trim().replace(/^0x/i, "");
   if (!/^([0-9a-fA-F]{2})*$/.test(clean)) throw new Error("invalid hex");
-  return Uint8Array.from(Buffer.from(clean, "hex"));
+  return Uint8Array.from(clean.match(/../g) ?? [], (b) => parseInt(b, 16));
 };
+const randomBytes = (n) => crypto.getRandomValues(new Uint8Array(n));
 const leToBigInt = (b) => b.reduceRight((n, byte) => (n << 8n) | BigInt(byte), 0n);
 const le32 = (n) => {
   const out = new Uint8Array(32);

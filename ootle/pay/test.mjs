@@ -65,15 +65,17 @@ test("a hold lapses in minutes unless its turn starts, and then within hours, bu
   assert.equal(charge(ledger, ran.hold, 700).balance, 1_000);
 });
 
-test("claims wait for the minimum, except on a lane that is closing", () => {
+test("claims take what turns were charged, never the whole voucher, and wait for the minimum unless a lane closes", () => {
   const ledger = emptyLedger();
-  admit(ledger, voucher(5_000), chain(), settings);
-  admit(ledger, voucher(500, 1), chain({ id: 1 }), settings);
-  const lanes = { 0: chain({ claimed: 1_000 }), 1: chain({ id: 1 }) };
-  assert.deepEqual(claimable(ledger, (n) => lanes[n], 4_000).map((v) => v.lane), [0]);
-  assert.deepEqual(claimable(ledger, (n) => lanes[n], 4_001).map((v) => v.lane), []);
+  charge(ledger, admit(ledger, voucher(5_000), chain(), settings).hold, 4_200);
+  charge(ledger, admit(ledger, voucher(9_000, 1), chain({ id: 1 }), settings).hold, 300);
+  const lanes = { 0: chain({ claimed: 200 }), 1: chain({ id: 1 }) };
+  const claims = (min) => claimable(ledger, (n) => lanes[n], min).map((c) => [c.voucher.lane, c.amount]);
+  assert.deepEqual(claims(4_000), [[0, 4_200]]);
+  assert.deepEqual(claims(4_001), []);
   lanes[1].close_requested_epoch = 9;
-  assert.deepEqual(claimable(ledger, (n) => lanes[n], 4_001).map((v) => v.lane), [1]);
+  assert.deepEqual(claims(4_001), [[1, 300]]);
   lanes[1].closed = true;
-  assert.deepEqual(claimable(ledger, (n) => lanes[n], 0).map((v) => v.lane), [0]);
+  ledger.lanes[0].charged = 7_000;
+  assert.deepEqual(claims(0), [[0, 5_000]], "never above the voucher");
 });

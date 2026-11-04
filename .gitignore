@@ -30,3 +30,4 @@ scripts/support-matrix/package-lock.json
 # ootleRouter: the contract build and the payment ledger of a local run.
 ootle/**/target/
 ootle/pay/ootle-pay.json*
+ootle/deployments/localnet.json

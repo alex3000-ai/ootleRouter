@@ -8,6 +8,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const TARI = "resource_" + "01".repeat(32);
+/** Network bytes transactions carry (ootle_network). */
+export const NETWORKS = { mainnet: 0x00, localnet: 0x10, igor: 0x24, esmeralda: 0x26 };
 const hex = (b) => Buffer.from(b).toString("hex");
 
 function head(major, n) {
@@ -76,10 +78,10 @@ function unsigned({ feeAccount, maxFee, instructions, inputs, dryRun, network, m
       inputs: inputs.map((i) => (typeof i === "string" ? { substate_id: i, is_write: false, version: null } : { substate_id: i.id, is_write: i.write === true, version: null })),
       min_epoch: null,
       max_epoch: maxEpoch,
-      blob_hashes: [],
-      blob_sizes: [],
+      // Ootle ≥ 0.48: the seal signer acts as the transaction's signer; no blobs.
+      main_signer: "SealSigner",
       dry_run: dryRun,
-      is_seal_signer_authorized: true,
+      blobs: [],
       nonce: Number(BigInt.asUintN(53, BigInt("0x" + hex(crypto.getRandomValues(new Uint8Array(8)))))),
     },
   };

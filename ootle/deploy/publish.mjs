@@ -1,20 +1,24 @@
 #!/usr/bin/env node
 // Publishes the OotleRouterLanes template and creates its component through a local wallet daemon, recording both in
-// deployments/esmeralda.json. Dry-runs by default; --live spends. The close window is fixed forever once created.
+// deployments/<network>.json. Dry-runs by default; --live spends. The close window is fixed forever once created.
 //   PATH="$HOME/.cargo/bin:$PATH" cargo build --release --target wasm32-unknown-unknown -p ootlerouter_lanes
-//   node deploy/publish.mjs --account A [--close-epochs E] [--live]
+//   node deploy/publish.mjs --account A [--network esmeralda|localnet|mainnet] [--indexer URL] [--close-epochs E] [--live]
 //   --create-only skips publishing and creates from the template already recorded.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { accountInfo, callFunction, cbor, parseArgs, publishTemplate, submitInstructions, TARI, usage, walletd } from "../pay/tx.mjs";
+import { accountInfo, callFunction, cbor, NETWORKS, parseArgs, publishTemplate, submitInstructions, TARI, usage, walletd } from "../pay/tx.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PATH = join(ROOT, "deployments", "esmeralda.json");
 const WASM = join(ROOT, "target/wasm32-unknown-unknown/release/ootlerouter_lanes.wasm");
 const { flags } = parseArgs(process.argv.slice(2));
 if (!flags.account) usage(import.meta.url, "missing");
+const network = flags.network ?? "esmeralda";
+if (!(network in NETWORKS)) usage(import.meta.url, "network");
+const indexer = flags.indexer ?? "https://ootle-indexer-a.tari.com";
+const PATH = join(ROOT, "deployments", `${network}.json`);
+process.env.OOTLE_LANES_DEPLOYMENT = PATH;
 const live = flags.live === true;
 const closeEpochs = BigInt(flags["close-epochs"] ?? 6);
 
@@ -28,14 +32,14 @@ if (!flags["create-only"]) {
     console.log(`publish: dry run fee ${p.dry_run_fee} µT for a ${(readFileSync(WASM).length / 1024).toFixed(0)} KiB template. Add --live to publish and create.`);
     process.exit(0);
   }
-  Object.assign(dep, { network: "esmeralda", indexer: "https://ootle-indexer-a.tari.com", template: p.template, transactions: { publish: p.transaction_id } });
+  Object.assign(dep, { network, indexer, template: p.template, transactions: { publish: p.transaction_id } });
   save();
   console.log(`published ${p.template} in ${p.transaction_id} (fee ${p.fee} µT)`);
 }
 
 const acct = await accountInfo(rpc, flags.account);
 const r = await submitInstructions(rpc, {
-  feeAccount: acct.component, signerIndex: acct.index, live, ceiling: Number(flags["max-fee"] ?? 30_000),
+  feeAccount: acct.component, signerIndex: acct.index, live, ceiling: Number(flags["max-fee"] ?? 30_000), network: NETWORKS[network], indexer,
   instructions: [callFunction(dep.template, "new", [cbor.resource(TARI), cbor.uint(closeEpochs)])],
 });
 if (!live) {

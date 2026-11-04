@@ -68,7 +68,33 @@ function isPublic(path: string): boolean {
     || (!path.startsWith('/api/') && !path.startsWith('/data/') && STATIC_ASSET.test(path));
 }
 
+// ootleRouter: pages that sell this router's API (OOTLE_CORS_ORIGINS, comma-separated, e.g. https://ootlebook.com) may
+// call it from a browser with the caller's own key. No cookies cross over, so the console's session never does.
+const CORS_ORIGINS = (process.env.OOTLE_CORS_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
+
+function corsHeaders(req: NextRequest): Record<string, string> | null {
+  const origin = req.headers.get('origin') || '';
+  if (!CORS_ORIGINS.includes(origin) || !req.nextUrl.pathname.startsWith('/api/harness/v1/')) return null;
+  return {
+    'access-control-allow-origin': origin,
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
+    'access-control-allow-headers': 'authorization, content-type, idempotency-key, x-ootle-voucher',
+    'access-control-max-age': '600',
+    // A public page calling a router on the caller's own machine or network (Chrome's Private Network Access).
+    'access-control-allow-private-network': 'true',
+    vary: 'Origin',
+  };
+}
+
 export async function middleware(req: NextRequest) {
+  const cors = corsHeaders(req);
+  if (cors && req.method === 'OPTIONS') return new NextResponse(null, { status: 204, headers: cors });
+  const res = await gate(req);
+  if (cors) for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
+  return res;
+}
+
+async function gate(req: NextRequest): Promise<NextResponse> {
   const { pathname, search } = req.nextUrl;
   // An older console address is answered with its place in this console before any page loads, so
   // a bookmark or a link never shows an old page first. A redirect carries no data, so it comes

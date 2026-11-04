@@ -5,7 +5,7 @@
 //   voucher --key-file FILE <lane> <spent_cum µT>     a voucher: send it as the X-Ootle-Voucher header
 //   open --account A <provider key> <µT> <voucher public key>
 //   fund --account A <lane> <µT>
-//   claim --account A <voucher.json>                  (provider)
+//   claim --account A <voucher.json> [µT]             (provider) up to µT in all (default: the voucher's cap)
 //   release --account A <lane>                        (provider) end a lane at once; the buyer can refund
 //   close --account A <lane> ; refund --account A <lane>   (buyer) refund works once the close window has passed
 // Writes go through tari_ootle_walletd at WALLETD_URL (default http://127.0.0.1:5100/json_rpc) with WALLETD_TOKEN or
@@ -13,7 +13,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { isPublicKey, keygen, signVoucher, verifyVoucher } from "./keys.mjs";
-import { calls, currentEpoch, deployment, hubState, lane } from "./lanes.mjs";
+import { calls, currentEpoch, deployment, hubState, lane, txTarget } from "./lanes.mjs";
 import { accountInfo, parseArgs, report, submitInstructions, usage, walletd } from "./tx.mjs";
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -28,7 +28,7 @@ async function send(what, build) {
   const acct = await accountInfo(rpc, flags.account);
   await hubState();
   const { instructions, inputs } = build(acct);
-  const r = await submitInstructions(rpc, { feeAccount: acct.component, signerIndex: acct.index, instructions, inputs, live: flags.live === true, ceiling: Number(flags["max-fee"] ?? 15_000) });
+  const r = await submitInstructions(rpc, { feeAccount: acct.component, signerIndex: acct.index, instructions, inputs, live: flags.live === true, ceiling: Number(flags["max-fee"] ?? 15_000), ...txTarget() });
   report(r, what);
   return { r, acct };
 }
@@ -78,11 +78,13 @@ switch (cmd) {
     break;
   }
   case "claim": {
-    const v = JSON.parse(readFileSync(args[0] ?? fail("usage: claim --account A <voucher.json>"), "utf8"));
+    const v = JSON.parse(readFileSync(args[0] ?? fail("usage: claim --account A <voucher.json> [µT]"), "utf8"));
+    const amount = args[1] ?? v.spent_cum;
     const l = await laneOf(String(v.lane));
     need(v.hub === deployment().hub && v.public_key === l.voucher_key && verifyVoucher(v), "the voucher isn't valid for this lane");
-    need(!l.closed && BigInt(v.spent_cum) > BigInt(l.claimed), `nothing to claim: lane ${l.id} has paid out ${l.claimed} µT${l.closed ? " and is closed" : ""}`);
-    await send(`claimed lane ${l.id} up to ${v.spent_cum} µT`, (a) => calls.claim(a.component, v));
+    need(/^\d+$/.test(amount) && BigInt(amount) <= BigInt(v.spent_cum), `claim at most the voucher's ${v.spent_cum} µT`);
+    need(!l.closed && BigInt(amount) > BigInt(l.claimed), `nothing to claim: lane ${l.id} has paid out ${l.claimed} µT${l.closed ? " and is closed" : ""}`);
+    await send(`claimed lane ${l.id} up to ${amount} µT`, (a) => calls.claim(a.component, v, amount));
     break;
   }
   case "close":

@@ -6,7 +6,8 @@
 // request. A lane's balance is its best voucher less what finished turns cost and what running turns hold. A turn
 // starts only while the balance covers OOTLE_RESERVE; it then holds that reserve until it is charged its real cost.
 // A hold whose turn the gateway never starts lapses in two minutes.
-// With WALLETD_URL and OOTLE_ACCOUNT set, the service claims vouchers on-chain from time to time.
+// With WALLETD_URL and OOTLE_ACCOUNT set, the service claims on-chain from time to time what turns have been charged,
+// never more: a voucher only caps the claim.
 //
 //   POST /admit  {voucher}          -> {hold, lane, balance} | 402 {code, message, ...lane status}
 //   POST /start  {hold}             -> {} (the turn is running: keep the hold for up to three hours)
@@ -85,13 +86,15 @@ export function charge(ledger, hold, amount) {
   return status(ledger, h.lane);
 }
 
-/** Lanes worth claiming now: unclaimed vouchers of at least `min`, or any unclaimed amount on a closing lane. */
+/** Claims worth making now: what's charged (within the best voucher) and not yet claimed, if at least `min`, or any
+ *  such amount on a closing lane. Returns [{voucher, amount}], amount being the new claimed total. */
 export function claimable(ledger, chainOf, min) {
   return Object.entries(ledger.lanes).flatMap(([n, l]) => {
     const c = chainOf(Number(n));
     if (!c || !l.voucher || c.closed) return [];
-    const unclaimed = Number(l.voucher.spent_cum) - c.claimed;
-    return unclaimed > 0 && (unclaimed >= min || c.close_requested_epoch !== null) ? [l.voucher] : [];
+    const amount = Math.min(l.charged, Number(l.voucher.spent_cum));
+    const unclaimed = amount - c.claimed;
+    return unclaimed > 0 && (unclaimed >= min || c.close_requested_epoch !== null) ? [{ voucher: l.voucher, amount }] : [];
   });
 }
 
@@ -106,7 +109,13 @@ async function main() {
   const settings = { hub: deployment().hub, providerKey, reserve: Number(env.OOTLE_RESERVE ?? 10_000) };
   const claimMin = Number(env.OOTLE_CLAIM_MIN ?? 100_000);
   const path = env.OOTLE_PAY_LEDGER ?? "ootle-pay.json";
-  const ledger = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : emptyLedger();
+  let ledger = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : emptyLedger();
+  // Lane numbers belong to one lanes component: a new one starts a new ledger, and the old one is kept beside it.
+  if (ledger.hub && ledger.hub !== settings.hub) {
+    renameSync(path, `${path}.${ledger.hub}`);
+    ledger = emptyLedger();
+  }
+  ledger.hub = settings.hub;
   const save = () => (writeFileSync(`${path}.tmp`, JSON.stringify(ledger)), renameSync(`${path}.tmp`, path));
   await hubState();
 
@@ -156,18 +165,18 @@ async function main() {
 
   if (env.WALLETD_URL && env.OOTLE_ACCOUNT) {
     const { accountInfo, submitInstructions, walletd } = await import("./tx.mjs");
-    const { calls } = await import("./lanes.mjs");
+    const { calls, txTarget } = await import("./lanes.mjs");
     const rpc = walletd();
     const acct = await accountInfo(rpc, env.OOTLE_ACCOUNT);
     if (acct.key !== providerKey) throw new Error(`walletd account ${env.OOTLE_ACCOUNT}'s key isn't OOTLE_PROVIDER_KEY`);
     const claimRound = async () => {
       const chain = new Map();
       for (const n of Object.keys(ledger.lanes)) chain.set(Number(n), await lane(n).catch(() => null));
-      for (const v of claimable(ledger, (n) => chain.get(n), claimMin)) {
+      for (const { voucher: v, amount } of claimable(ledger, (n) => chain.get(n), claimMin)) {
         try {
-          const { instructions, inputs } = calls.claim(acct.component, v);
-          const r = await submitInstructions(rpc, { feeAccount: acct.component, signerIndex: acct.index, instructions, inputs, live: true });
-          console.log(`[ootle-pay] claimed lane ${v.lane} up to ${v.spent_cum} µT: ${r.transaction_id} (fee ${r.fee} µT)`);
+          const { instructions, inputs } = calls.claim(acct.component, v, amount);
+          const r = await submitInstructions(rpc, { feeAccount: acct.component, signerIndex: acct.index, instructions, inputs, live: true, ...txTarget() });
+          console.log(`[ootle-pay] claimed lane ${v.lane} up to ${amount} µT: ${r.transaction_id} (fee ${r.fee} µT)`);
         } catch (e) {
           console.log(`[ootle-pay] claim on lane ${v.lane} failed: ${String(e.message).slice(0, 300)}`);
         }
