@@ -8,8 +8,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const TARI = "resource_" + "01".repeat(32);
-/** Network bytes transactions carry (ootle_network). */
-export const NETWORKS = { mainnet: 0x00, localnet: 0x10, igor: 0x24, esmeralda: 0x26 };
+export { NETWORKS } from "./keys.mjs";
 const hex = (b) => Buffer.from(b).toString("hex");
 
 function head(major, n) {

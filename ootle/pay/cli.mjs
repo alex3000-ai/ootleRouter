@@ -50,7 +50,7 @@ switch (cmd) {
     const [n, spent] = args;
     const l = await laneOf(n);
     need(/^\d+$/.test(spent ?? "") && BigInt(spent) <= BigInt(l.deposited), `the voucher must be a whole µT amount up to the lane's ${l.deposited}`);
-    const v = signVoucher(readFileSync(flags["key-file"] ?? fail("--key-file is required"), "utf8").trim(), deployment().hub, n, spent);
+    const v = signVoucher(readFileSync(flags["key-file"] ?? fail("--key-file is required"), "utf8").trim(), deployment().hub, n, spent, deployment().network ?? "esmeralda");
     need(v.public_key === l.voucher_key && verifyVoucher(v), `that key isn't lane ${n}'s voucher key`);
     console.log(JSON.stringify(v));
     break;

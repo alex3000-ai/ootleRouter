@@ -11,7 +11,8 @@ use tari_engine_types::{
     indexed_value::IndexedValue,
     virtual_substate::{VirtualSubstate, VirtualSubstateId},
 };
-use tari_ootle_common_types::RistrettoSchnorrBlake2bVerifier;
+use ootle_network::Network;
+use tari_ootle_common_types::{sign_template_message_schnorr, TemplateSignatureBinding};
 use tari_ootle_transaction::{args, builder::named_args::NamedArg, Transaction};
 use tari_template_lib_types::{
     constants::TARI_TOKEN,
@@ -30,10 +31,9 @@ fn new_key() -> RistrettoSecretKey {
     RistrettoSecretKey::random(&mut rand::rng())
 }
 
-fn schnorr(key: &RistrettoSecretKey, message: &[u8]) -> SignaturePayload {
-    let (nonce, public_nonce) = RistrettoPublicKey::random_keypair(&mut rand::rng());
-    let challenge = RistrettoSchnorrBlake2bVerifier::compute_challenge(VOUCHER_DOMAIN, message, &pk(key), &public_nonce.to_byte_type());
-    SignaturePayload::RistrettoSchnorrBlake2b(RistrettoSchnorr::sign_raw_uniform(key, nonce, &challenge).expect("sign").to_byte_type())
+/// A voucher signature as the engine verifies it for `hub` (the test engine runs as LocalNet).
+fn schnorr(hub: &ComponentAddress, key: &RistrettoSecretKey, message: &[u8]) -> SignaturePayload {
+    SignaturePayload::RistrettoSchnorrBlake2b(sign_template_message_schnorr(key, &TemplateSignatureBinding::component(Network::LocalNet, *hub), VOUCHER_DOMAIN, message))
 }
 
 struct Party {
@@ -116,7 +116,7 @@ impl Hub {
     }
 
     fn voucher(&self, key: &RistrettoSecretKey, lane: u64, spent: u64) -> SignaturePayload {
-        schnorr(key, &voucher_message(&self.hub, lane, spent.into()))
+        schnorr(&self.hub, key, &voucher_message(&self.hub, lane, spent.into()))
     }
 
     /// A claim of the whole voucher.
@@ -255,7 +255,7 @@ fn vouchers_from_the_javascript_client_are_accepted() {
     let lane = h.open(&buyer, &provider, &vk, 5_000);
     let script = "import { signVoucher } from './pay/keys.mjs'; \
         const [key, hub, lane, spent] = process.argv.slice(1); \
-        const v = signVoucher(key, hub, lane, spent); process.stdout.write(v.public_nonce + ' ' + v.signature);";
+        const v = signVoucher(key, hub, lane, spent, 'localnet'); process.stdout.write(v.public_nonce + ' ' + v.signature);";
     let out = std::process::Command::new("node")
         .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
         .args(["--input-type=module", "-e", script, &vk.to_hex(), &h.hub.to_string(), &lane.to_string(), "2500"])

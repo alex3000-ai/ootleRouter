@@ -134,7 +134,9 @@ mod ootlerouter_lanes {
             assert!(claim_cum <= voucher_cum, "claim exceeds the voucher");
             assert!(claim_cum <= state.deposited, "claim exceeds the lane's escrow");
             let message = voucher_message(&CallerContext::current_component_address(), lane, voucher_cum);
-            assert!(SignatureVerifier::with_domain(VOUCHER_DOMAIN).verify(&PublicKey::Ristretto25519(info.voucher_key), &message, &voucher), "invalid voucher signature");
+            // Bound to this component (and, by the engine, to the network): a voucher is good for this lanes component only.
+            let verifier = SignatureVerifier::with_domain(VOUCHER_DOMAIN).with_scope(SignatureScope::CurrentComponent);
+            assert!(verifier.verify(&PublicKey::Ristretto25519(info.voucher_key), &message, &voucher), "invalid voucher signature");
             let payout = claim_cum.checked_sub(state.claimed).expect("checked above");
             state.claimed = claim_cum;
             self.save(lane, state, "lanes.claimed");

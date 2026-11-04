@@ -47,10 +47,10 @@ const refuse = (code, message, extra = {}) => ({ refused: { code, message, ...ex
  * Checks `voucher` against its lane as read from the chain (`chain`, or null) and this router's settings, keeps it
  * if it is the best so far, and holds `reserve` for a new turn. Returns {hold, ...status} or {refused}.
  */
-export function admit(ledger, voucher, chain, { hub, providerKey, reserve, now = Date.now() }) {
+export function admit(ledger, voucher, chain, { hub, network, providerKey, reserve, now = Date.now() }) {
   for (const [id, h] of Object.entries(ledger.holds)) if (now - h.at >= KEEP_MS) delete ledger.holds[id];
   if (!voucher || typeof voucher !== "object") return refuse("voucher_required", "Send a voucher for your lane in the X-Ootle-Voucher header.");
-  if (voucher.hub !== hub) return refuse("voucher_invalid", `Vouchers here are for the lanes component ${hub}.`);
+  if (voucher.hub !== hub || voucher.network !== network) return refuse("voucher_invalid", `Vouchers here are for the lanes component ${hub} on ${network}.`);
   if (!verifyVoucher(voucher)) return refuse("voucher_invalid", "The voucher's signature doesn't check out.");
   const n = Number(voucher.lane);
   if (!chain) return refuse("lane_not_found", `There is no lane ${n}.`);
@@ -106,7 +106,7 @@ async function main() {
   const token = env.OOTLE_PAY_TOKEN ?? "";
   const providerKey = (env.OOTLE_PROVIDER_KEY ?? "").toLowerCase();
   if (token.length < 16 || !/^[0-9a-f]{64}$/.test(providerKey)) throw new Error("set OOTLE_PAY_TOKEN (16+ characters) and OOTLE_PROVIDER_KEY (64 hex)");
-  const settings = { hub: deployment().hub, providerKey, reserve: Number(env.OOTLE_RESERVE ?? 10_000) };
+  const settings = { hub: deployment().hub, network: deployment().network ?? "esmeralda", providerKey, reserve: Number(env.OOTLE_RESERVE ?? 10_000) };
   const claimMin = Number(env.OOTLE_CLAIM_MIN ?? 100_000);
   const path = env.OOTLE_PAY_LEDGER ?? "ootle-pay.json";
   let ledger = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : emptyLedger();

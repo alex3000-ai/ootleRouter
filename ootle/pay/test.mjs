@@ -6,9 +6,9 @@ import { admit, charge, claimable, emptyLedger, HOLD_TTL_MS, start, START_TTL_MS
 
 const hub = "component_" + "ab".repeat(32);
 const provider = keygen(), voucherKey = keygen();
-const settings = { hub, providerKey: provider.publicKey, reserve: 1_000 };
+const settings = { hub, network: "esmeralda", providerKey: provider.publicKey, reserve: 1_000 };
 const chain = (over = {}) => ({ id: 0, provider_key: provider.publicKey, voucher_key: voucherKey.publicKey, deposited: 10_000, claimed: 0, close_requested_epoch: null, closed: false, ...over });
-const voucher = (cum, lane = 0, key = voucherKey) => signVoucher(key.secretKey, hub, lane, cum);
+const voucher = (cum, lane = 0, key = voucherKey, network = "esmeralda") => signVoucher(key.secretKey, hub, lane, cum, network);
 
 test("vouchers sign and verify, and any change breaks them", () => {
   const v = voucher(2_500);
@@ -16,6 +16,7 @@ test("vouchers sign and verify, and any change breaks them", () => {
   assert.ok(!verifyVoucher({ ...v, spent_cum: "2501" }));
   assert.ok(!verifyVoucher({ ...v, lane: 1 }));
   assert.ok(!verifyVoucher({ ...v, signature: "00" }));
+  assert.ok(!verifyVoucher({ ...v, network: "localnet" }), "a voucher is bound to its network");
 });
 
 test("a turn starts only on a valid voucher for a lane that pays this router", () => {
@@ -24,6 +25,7 @@ test("a turn starts only on a valid voucher for a lane that pays this router", (
   assert.equal(code(admit(ledger, null, chain(), settings)), "voucher_required");
   assert.equal(code(admit(ledger, { ...voucher(2_000), hub: "component_" + "cd".repeat(32) }, chain(), settings)), "voucher_invalid");
   assert.equal(code(admit(ledger, { ...voucher(2_000), spent_cum: "3000" }, chain(), settings)), "voucher_invalid");
+  assert.equal(code(admit(ledger, voucher(2_000, 0, voucherKey, "localnet"), chain(), settings)), "voucher_invalid");
   assert.equal(code(admit(ledger, voucher(2_000), null, settings)), "lane_not_found");
   assert.equal(code(admit(ledger, voucher(2_000), chain({ provider_key: keygen().publicKey }), settings)), "voucher_invalid");
   assert.equal(code(admit(ledger, voucher(2_000, 0, keygen()), chain(), settings)), "voucher_invalid");

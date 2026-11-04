@@ -1,0 +1,14 @@
+{
+  "network": "esmeralda",
+  "indexer": "https://ootle-indexer-a.tari.com",
+  "template": "template_574c363041050ae4b22894af11eade84f3b3a433da82ad3d2ed19b6ac281d8ca",
+  "transactions": {
+    "publish": "1ec1484f964ebbabeec4159af723604ef45190b9aa8ee11b28df04a7b23fddf0",
+    "create": "5bd6249676cf7ef7b46a01c0912c2b5e69b5db2dfd8927edd87e0f6bbbd076c9"
+  },
+  "deployed": "2026-11-04",
+  "component": "component_a524d57c1de85bf39db9dab3501338f8c1928ef141233d1683649659ac725dc2",
+  "payment_resource": "resource_0101010101010101010101010101010101010101010101010101010101010101",
+  "close_epochs": 6,
+  "lanes_resource": "resource_a5620e2f435957925f878342f7d97a3d8d0e62652080ce9077344ca44777ccd2"
+}
