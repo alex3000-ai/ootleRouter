@@ -167,9 +167,8 @@ export function walletd() {
 
 /** A walletd account's component, public key and key index (the index seals its transactions). */
 export async function accountInfo(rpc, name) {
-  const { accounts } = await rpc("accounts.list", { offset: 0, limit: 100 });
-  const a = accounts.find((x) => x.account.name === name);
-  if (!a) throw new Error(`no walletd account named "${name}"`);
+  // accounts.get, not accounts.list: an API key scoped to this one account may read it but not list the others.
+  const a = await rpc("accounts.get", { name_or_address: { Name: name } });
   const index = a.account.owner_key_id?.Derived?.index;
   if (index === undefined) throw new Error(`account "${name}" has no derived key index`);
   return { component: a.account.component_address, key: a.account.owner_public_key, index };
