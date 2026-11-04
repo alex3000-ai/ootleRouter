@@ -1878,8 +1878,19 @@ fi
 # declaration the runner fails closed without. The console's credentials and the secret-store key
 # are the product's and are not in its environment at all.
 ( cd /app/runner && exec env -u HR_AUTH_USER -u HR_AUTH_PASSWORD -u HR_AUTH_STORE -u HR_SECRET_KEY \
+    -u OOTLE_PAY_TOKEN -u WALLETD_TOKEN -u WALLETD_TOKEN_FILE \
     HR_SESSION_UIDS=1 "$PY" -m uvicorn server:app --host 127.0.0.1 --port 8081 --log-level warning ) &
 pids+=($!)
+
+# ootleRouter payments (ootle/README.md), on when OOTLE_PROVIDER_KEY names this router's provider key. Exported only
+# now, after the runner started, so no agent the runner spawns can read the service's token.
+if [ -n "${OOTLE_PROVIDER_KEY:-}" ]; then
+  export OOTLE_PAY_URL=http://127.0.0.1:8090 OOTLE_PRICES="${OOTLE_PRICES:-/app/ootle/prices.json}" \
+    OOTLE_PAY_LEDGER="$DATA_DIR/ootle-pay.json"
+  export OOTLE_PAY_TOKEN="${OOTLE_PAY_TOKEN:-$("$PY" -I -c 'import secrets; print(secrets.token_hex(32))')}"
+  ( cd /app/ootle/pay && exec $AS_PRODUCT sh -c 'umask 077; exec node server.mjs' ) &
+  pids+=($!)
+fi
 
 # gateway (loopback only), as the product. umask 077: what it creates on the volume (databases,
 # blobs, the secret store) is its alone.

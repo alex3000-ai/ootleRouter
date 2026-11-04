@@ -1,0 +1,7 @@
+{
+  "harness.session_minute": 1000,
+  "llm.*.input_1k": 10,
+  "llm.*.output_1k": 50,
+  "llm.*.cache_read_1k": 1,
+  "llm.*.cache_write_1k": 12
+}

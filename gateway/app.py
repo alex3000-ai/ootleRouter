@@ -59,6 +59,7 @@ import sql_plane             # the read-only SQL data plane (gate, row cap, intr
 import control_store  # durable transactional control state (idempotency / lease / monotonic cancel)
 import setup_compose         # New setup: the rules every built configuration is held to
 import setup_builder         # New setup: the built-in builder, saving into the person's workspace
+import ootle_pay             # pay-per-use in tTARI through OotleRouterLanes
 
 POOL_ENDPOINT = os.environ.get("POOL_MGMT_ENDPOINT", "").rstrip("/")
 VAULT_URL = os.environ.get("VAULT_URL", "").rstrip("/")
@@ -158,6 +159,11 @@ async def _refresh_pricing_table() -> None:
     A 200 carrying an empty table counts as not working — accepting it would cache emptiness for
     the whole TTL and make a broken deployment look like a free one."""
     global _pricing_table, _pricing_fetched_at, _pricing_warned
+    if ootle_pay.enabled():
+        # Prices in µT from the operator's file. Unreadable is fatal to the turn's charge, not silent.
+        if time.time() - _pricing_fetched_at >= _PRICING_TTL_S or not _pricing_table:
+            _pricing_table, _pricing_fetched_at = ootle_pay.price_table(), time.time()
+        return
     if not ENGINE_URL or not BILLING_INTERNAL_KEY:
         return                       # billing not wired: prices are genuinely unset, not missing
     if time.time() - _pricing_fetched_at < _PRICING_TTL_S and _pricing_table:
@@ -193,7 +199,10 @@ def _price_of(metric: str) -> float:
     hr = _pricing_table.get("harnessrouter", {})
     if metric in hr:
         return float(hr[metric])
-    return float(_pricing_table.get("system", {}).get(metric, 0.0))
+    system = _pricing_table.get("system", {})
+    if metric not in system and metric.startswith("llm."):
+        metric = "llm.*." + metric.rsplit(".", 1)[1]     # the price for every model without its own row
+    return float(system.get(metric, 0.0))
 
 
 def _run_credits(model: str, usage: dict, elapsed_s: float) -> float:
@@ -2718,6 +2727,14 @@ async def _trace_finalize(sid: str, rec: dict) -> None:
         manifest["credits"] = _prior_credits + _this_credits
     except Exception:  # noqa: BLE001 — never let costing break finalize
         pass
+    _hold = tr.pop("ootle_hold", "")
+    if _hold and _may_meter:
+        try:
+            await _refresh_pricing_table()
+            await ootle_pay.charge(_client(), _hold, _run_credits(str(rec.get("model") or ""), _usage, float(_elapsed_s or 0)))
+        except Exception as e:  # noqa: BLE001 — the hold lapses uncharged; say so
+            _billing_drops.bump("errors")
+            print(f"[ootle-pay] charge failed sid={sid}: {type(e).__name__}: {str(e)[:200]}", flush=True)
     # NOTE (HR-INF-015): no consolidation here anymore. The single-blob transcript caches
     # (all.jsonl / all.compact.jsonl) are built lazily by get_trace_all on the FIRST read of a
     # finished trace. INVALIDATE them BEFORE writing the terminal manifest — ordering matters:
@@ -4948,6 +4965,7 @@ _INPUT_REQUEST_TTL_S = 30 * 86400
 _UHP_STATUS_TYPE = {
     400: ("invalid_request_error", "invalid_input"),
     401: ("authentication_error", "invalid_credential"),
+    402: ("invalid_request_error", "payment_required"),
     403: ("permission_error", "insufficient_scope"),
     404: ("invalid_request_error", "not_found"),
     409: ("invalid_request_error", "conflict"),
@@ -10723,6 +10741,26 @@ def _want_partial(backend: str, meta: dict) -> bool:
         os.environ.get("HARNESS_STREAM_PARTIAL", "0") == "1" or bool(meta.get("stream_partial")))
 
 
+@app.get("/v1/ootle")
+async def ootle_info(request: Request):
+    """How to pay here: the lanes component, this router's provider key, the reserve a turn holds and the
+    prices, all in µT."""
+    await _principal(request)
+    if not ootle_pay.enabled():
+        raise uhp_error(404, "not_found", "This instance takes no Ootle payments.")
+    await _refresh_pricing_table()
+    return {**await ootle_pay.get(_client(), "/info"), "prices": _pricing_table.get("system", {})}
+
+
+@app.get("/v1/ootle/lanes/{lane}")
+async def ootle_lane(lane: int, request: Request):
+    """A lane as this router counts it: the best voucher seen, what turns have cost, what running ones hold."""
+    await _principal(request)
+    if not ootle_pay.enabled() or lane < 0:
+        raise uhp_error(404, "not_found", "No such lane here.")
+    return await ootle_pay.get(_client(), f"/lanes/{lane}")
+
+
 @app.post("/v1/responses")
 async def create_response(body: CreateResponseBody, request: Request):
     principal = await _principal(request)
@@ -10941,6 +10979,18 @@ async def create_response(body: CreateResponseBody, request: Request):
         names = ", ".join(f["filename"] for f in files_in)
         prompt = f"[Attached files saved in your working directory: {names}]\n\n{prompt}"
 
+    # Pay-per-use: an API-key caller's turn starts only on a voucher the payment service admits, checked
+    # after the request is known to be valid and before the session is touched. The hold it returns is
+    # charged the turn's cost at trace-finalize, or let go below if the turn never starts.
+    ootle_hold = ""
+    if ootle_pay.enabled() and principal.get("via") == "api_key":
+        try:
+            ootle_hold = str((await ootle_pay.admit(_client(), request.headers.get(ootle_pay.HEADER)))["hold"])
+        except ootle_pay.Refused as e:
+            raise uhp_error(402, str(e.detail.get("code") or "payment_required"), str(e), "X-Ootle-Voucher", e.detail)
+        except Exception as e:  # noqa: BLE001 — nobody is paying, so nothing runs
+            raise uhp_error(503, "payment_unavailable", "The payment service is unavailable; retry.") from e
+
     # session_hint: the client's known active session — a fallback continuity signal so a
     # follow-up never forks a new session when previous_response_id was lost client-side
     # (interrupted stream, tab switch). The resolver validates org ownership before reuse.
@@ -11041,7 +11091,7 @@ async def create_response(body: CreateResponseBody, request: Request):
     # permit a double run — so we release ONLY on an exception before execution begins.
     try:
         # remember this turn's response id on the trace + session so a loaded session can resume
-        _session_trace.setdefault(sid, {}).update(last_response_id=resp_id)
+        _session_trace.setdefault(sid, {}).update(last_response_id=resp_id, ootle_hold=ootle_hold)
         # The card's title this turn: a task started with earlier turns is named after its first
         # message, its first imported one; any other turn as always (_card_title).
         _session_trace[sid].pop("title_text", None)
@@ -11114,6 +11164,11 @@ async def create_response(body: CreateResponseBody, request: Request):
         raise
     # Past this point we are committed to executing; the turn will persist a terminal record even
     # on failure, so the reservation must stand (releasing would permit a double run).
+    if ootle_hold:     # a hold whose turn never gets here lapses within minutes (ootle/pay/server.mjs)
+        try:
+            await ootle_pay.start(_client(), ootle_hold)
+        except Exception as e:  # noqa: BLE001 — the turn is paid for by its charge; the hold only reserves
+            print(f"[ootle-pay] start failed sid={sid}: {type(e).__name__}: {str(e)[:200]}", flush=True)
 
     if body.background:
         # Durable async: run the turn as a DETACHED task and return the already-persisted 'running'

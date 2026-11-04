@@ -1,3 +1,8 @@
+> **ootleRouter** is a fork of [HarnessRouter Community Edition](https://github.com/HarnessRouter/harnessrouter)
+> that charges API callers per use in TARI on Tari Ootle, through payment lanes and off-chain vouchers.
+> See **[ootle/README.md](ootle/README.md)**. It is an independent community project, not affiliated with
+> HarnessRouter, Tari Labs or the Tari Ootle team. Everything below is upstream's README.
+
 <h1 align="center">
   <a href="https://harnessrouter.ai/open-source#gh-light-mode-only">
     <img alt="HarnessRouter" src=".github/images/logo-light.png" width="280">

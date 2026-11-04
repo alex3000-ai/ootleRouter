@@ -29,3 +29,6 @@ docs/
 # build copies the working tree, so a local run's leftovers would be baked in at /app/runner/.
 # Its *.md rule above saves only the two README.md; leak.txt and the two symlinks would travel.
 runner/henv*/
+
+# ootleRouter: the contract build (Rust) has no place in the image.
+ootle/**/target/

@@ -1,0 +1,11 @@
+{
+  "name": "ootlerouter-pay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Pay-per-use for ootleRouter through OotleRouterLanes on Tari Ootle: the gateway's payment service and the lanes CLI",
+  "bin": { "ootlerouter-lanes": "cli.mjs" },
+  "scripts": { "test": "node --test test.mjs" },
+  "dependencies": { "@noble/curves": "2.0.1", "@noble/hashes": "2.0.1", "@tari-project/ootle-wasm-bor": "0.48.0" }
+}

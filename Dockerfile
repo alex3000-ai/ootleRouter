@@ -165,6 +165,9 @@ RUN chmod +x /tmp/install-kits.sh \
 
 COPY gateway/ /app/gateway/
 COPY runner/  /app/runner/
+# ootleRouter: the payment service for pay-per-use through OotleRouterLanes (ootle/README.md).
+COPY ootle/ /app/ootle/
+RUN cd /app/ootle/pay && npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 COPY docker/entrypoint.sh /app/entrypoint.sh
 # The hash-locked dependency trees the first-boot installer fills vibe's, fast-agent's and dcode's
 # venvs from (pip --require-hashes): part of this reviewed image, never fetched at boot.
