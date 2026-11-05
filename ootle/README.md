@@ -18,10 +18,13 @@ The Console's own turns are free; only API-key callers pay.
 | `pay/cli.mjs` | `ootlerouter-lanes`: open, fund, close and refund lanes; sign vouchers; claim |
 | `prices.json` | µT per `harness.session_minute` and per 1k tokens (`llm.<model>.<kind>`; `llm.*.<kind>` for any model) |
 | `deploy/publish.mjs` | publishes the contract and creates the component; writes `deployments/<network>.json` |
-| `public/` | `up.sh` / `down.sh`: a public router as a Tor onion service, on networks with no way out |
+| `public/` | hosting: `setup-host.sh`, `up.sh`, `check.sh`, `down.sh`: a router as a Tor onion service, sealed off |
 | `../gateway/ootle_pay.py` | the gateway's side |
 
 ## Run a paid router
+
+**To host one for others, use [`public/`](public/README.md)**: it adds Tor, the isolation and the router's own wallet,
+and `check.sh` proves them. What follows is the bare container, for a router only you can reach.
 
 ```bash
 docker run -d --name ootlerouter -p 127.0.0.1:3000:3000 -v ootlerouter:/data \
@@ -37,6 +40,10 @@ automatically, `WALLETD_URL` (and `WALLETD_TOKEN`) plus `OOTLE_ACCOUNT` (a walle
 
 ## Pay for a turn
 
+A public router has an onion address, so these go through Tor: run a Tor client and add
+`--socks5-hostname 127.0.0.1:9050` to each `curl` (port 9150 while Tor Browser is open, if you use its). `$BASE` is the address its host gave you, ending in
+`/api/harness`; `$KEY` the API key they gave you. Opening, closing and refunding a lane goes through your own walletd.
+
 ```bash
 cd ootle/pay && npm install
 curl -H "Authorization: Bearer $KEY" $BASE/v1/ootle             # component, provider_key, reserve, prices
@@ -44,7 +51,7 @@ node cli.mjs keygen --out voucher.key                           # prints the vou
 node cli.mjs open --account me <provider_key> 1000000 <voucher public key> --live   # prints the lane number
 V=$(node cli.mjs voucher --key-file voucher.key <lane> 50000)   # allow up to 0.05 TARI in all
 curl $BASE/v1/responses -H "Authorization: Bearer $KEY" -H "X-Ootle-Voucher: $V" -H 'content-type: application/json' \
-  -d '{"input":"Reply with exactly: it works.","metadata":{"harness_id":"codex"},"model":"gpt-5.4-mini"}'
+  -d '{"input":"Reply with exactly: it works.","metadata":{"harness_id":"opencode"},"model":"<the host's model>"}'
 curl -H "Authorization: Bearer $KEY" $BASE/v1/ootle/lanes/<lane>  # charged so far and balance
 ```
 
