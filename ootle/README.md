@@ -17,7 +17,8 @@ The Console's own turns are free; only API-key callers pay.
 | `pay/server.mjs` | the payment service the gateway asks to admit and charge each turn; also claims vouchers |
 | `pay/cli.mjs` | `ootlerouter-lanes`: open, fund, close and refund lanes; sign vouchers; claim |
 | `prices.json` | µT per `harness.session_minute` and per 1k tokens (`llm.<model>.<kind>`; `llm.*.<kind>` for any model) |
-| `deploy/publish.mjs` | publishes the contract and creates the component; writes `deployments/esmeralda.json` |
+| `deploy/publish.mjs` | publishes the contract and creates the component; writes `deployments/<network>.json` |
+| `public/` | `up.sh` / `down.sh`: a public router on an isolated network behind a tunnel |
 | `../gateway/ootle_pay.py` | the gateway's side |
 
 ## Run a paid router
@@ -56,12 +57,15 @@ running tasks hold plus one reserve, as [ootlebook.com/router](https://ootlebook
 
 ## Status
 
-Tested end to end on a private one-machine Ootle network (`tari_swarm_daemon`, Ootle 0.47 development build, same
-transaction format as 0.49): published, a lane opened, paid turns run through the Docker image on a local model, the
-router claimed exactly what it charged, the lane closed and refunded, balances reconciled to the µT. Also driven from
-the ootlebook.com/router page in Chrome.
+**Live on Esmeralda** (Ootle 0.49.2): OotleRouterLanes `component_a524d57c1de85bf39db9dab3501338f8c1928ef141233d1683649659ac725dc2`
+(`deployments/esmeralda.json`). On 2026-11-04 a router ran publicly from `public/up.sh` and was paid from
+[ootlebook.com/router](https://ootlebook.com/router): a lane opened, two tasks on a local model, the router claimed
+exactly the 1,210 µT they cost, the lane closed and refunded. It was then taken offline; no public router runs now.
+Also tested on a private one-machine network (`tari_swarm_daemon`).
 
-**Not on a public network yet:** Esmeralda was reset on 2026-11-02 and its faucet has been empty since. To deploy:
-`cargo build --release --target wasm32-unknown-unknown -p ootlerouter_lanes`, then
-`node deploy/publish.mjs --account A --network esmeralda` (a dry run) and again with `--live`. It writes
+- Running one publicly: [public/README.md](public/README.md)
+- Threat model, findings, checklists for operators and payers, measured costs: [SECURITY.md](SECURITY.md)
+
+To deploy elsewhere: `cargo build --release --target wasm32-unknown-unknown -p ootlerouter_lanes`, then
+`node deploy/publish.mjs --account A --network <network>` (a dry run) and again with `--live`. It writes
 `deployments/<network>.json`, which the CLI and the payment service read (`OOTLE_LANES_DEPLOYMENT`).

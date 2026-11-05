@@ -61,7 +61,7 @@ docker network disconnect bridge ootlerouter-public
 
 echo "[up] tunnel"
 docker run -d --name ootlerouter-tunnel --network bridge cloudflare/cloudflared:latest \
-  tunnel --no-autoupdate --url "http://$ROUTER_IP:3000" >/dev/null
+  tunnel --no-autoupdate --protocol http2 --url "http://$ROUTER_IP:3000" >/dev/null
 docker network connect "$NET" ootlerouter-tunnel
 for _ in $(seq 1 30); do URL="$(docker logs ootlerouter-tunnel 2>&1 | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | head -1)"; [ -n "$URL" ] && break; sleep 2; done
 echo "${URL:?no tunnel URL}" > "$STATE/url"
