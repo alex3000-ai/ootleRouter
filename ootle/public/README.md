@@ -52,8 +52,10 @@ Then:
    `~/.config/ootlerouter/console-password`. Your model is already set up for every harness.
 4. **Make API keys** for payers (Keys in the console), and give them the API address.
 
-Payers use the API address from any Tor client: Tor Browser (where ootlebook.com/router should work, though that
-hasn't been tried yet), or for example
+Payers use the API address from any Tor client. In Tor Browser, [ootlebook.com/router](https://ootlebook.com/router)
+works against it as is: Tor Browser lets an https page call an onion, and `up.sh` allows that page's origin (tested:
+connect, lane status and a paid task, from the live page). Its "Safest" level turns JavaScript off, so the page needs
+"Standard" or "Safer". Or from a terminal, for example
 `curl --socks5-hostname 127.0.0.1:9050 http://<api>.onion/api/harness/v1/ootle -H "Authorization: Bearer $KEY"`.
 
 ## Your wallet

@@ -77,7 +77,9 @@ each side should do about it. Run a public router with [`public/`](public/README
    services (`HiddenServicePoWDefensesEnabled` against floods). The wallet's and the payment service's traffic to the
    indexer goes through Tor too, via the relay. Measured from an outside Tor client: the API onion answers in 1–3 s
    once warm (10/10), the console onion refuses without the client key and serves with it. After a restart the first
-   connections can time out for a few minutes while new descriptors spread.
+   connections can time out for a few minutes while new descriptors spread. And the live ootlebook.com/router page,
+   in a browser with Tor Browser's onion settings and all its traffic through Tor, connected to an onion router,
+   read a lane and ran a paid task (588 µT), loading no analytics beacon.
 10. **Agent tasks share the host's kernel** under runc, and can read its version, CPU and memory. **Recommended:**
    gVisor; `up.sh` uses the `runsc-netraw` runtime when Docker has it and warns when it doesn't.
 11. **Agents outside the router aren't in any of this.** hermes and openclaw on this machine run with
@@ -92,6 +94,8 @@ each side should do about it. Run a public router with [`public/`](public/README
 - walletd: the router's own, in `ootlerouter-pay`; keep only claim fees in it and sweep claims out.
 - A provider account holding little more than claim fees; sweep claims elsewhere.
 - Prices in `prices.json`; `OOTLE_CLAIM_MIN` well above a claim's fee (about 5,000 µT).
+  A closing lane is claimed only when its unclaimed charges exceed `OOTLE_CLAIM_FEE` (5,000 µT): below that, a claim
+  costs the router more than it collects (measured: 1,087 µT charged against a ~4,950 µT claim fee).
 - `OOTLE_CORS_ORIGINS` only for pages you trust to call your API from browsers.
 - Take it down with [`public/down.sh --purge`](public/down.sh); check nothing is left (it lists what remains).
 

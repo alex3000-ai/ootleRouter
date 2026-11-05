@@ -98,7 +98,7 @@ docker create --name ootlerouter-pay --network "$EGRESS" --ip "$PAY_E" --restart
   -e NETWORK="$NETWORK" -e INDEXER="$INDEXER" -e OOTLE_ACCOUNT="${OR_ACCOUNT:-router}" -e OOTLE_PAY_TOKEN="$PAY_TOKEN" \
   -e OOTLE_PAY_HOST="$PAY_B" -e OOTLE_PAY_LEDGER=/home/edge/pay/ootle-pay.json \
   -e OOTLE_LANES_DEPLOYMENT="/app/ootle/deployments/$DEPLOYMENT" \
-  ${OOTLE_RESERVE:+-e OOTLE_RESERVE} ${OOTLE_CLAIM_MIN:+-e OOTLE_CLAIM_MIN} ${OOTLE_CLAIM_EVERY_S:+-e OOTLE_CLAIM_EVERY_S} \
+  ${OOTLE_RESERVE:+-e OOTLE_RESERVE} ${OOTLE_CLAIM_MIN:+-e OOTLE_CLAIM_MIN} ${OOTLE_CLAIM_FEE:+-e OOTLE_CLAIM_FEE} ${OOTLE_CLAIM_EVERY_S:+-e OOTLE_CLAIM_EVERY_S} \
   "$EDGE" /app/ootle/public/pay.sh >/dev/null
 docker network connect --ip "$PAY_B" "$BACK" ootlerouter-pay
 docker start ootlerouter-pay >/dev/null

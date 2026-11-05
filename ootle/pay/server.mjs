@@ -17,7 +17,7 @@
 //   GET  /info                      -> what a caller needs to open a lane here
 //
 // Env: OOTLE_PAY_TOKEN, OOTLE_PROVIDER_KEY (hex), OOTLE_PAY_HOST (127.0.0.1), OOTLE_PAY_PORT (8090), OOTLE_PAY_LEDGER (./ootle-pay.json),
-//      OOTLE_RESERVE (10000 µT), OOTLE_CLAIM_MIN (100000 µT), OOTLE_CLAIM_EVERY_S (600), WALLETD_URL, OOTLE_ACCOUNT.
+//      OOTLE_RESERVE (10000 µT), OOTLE_CLAIM_MIN (100000 µT), OOTLE_CLAIM_FEE (5000 µT, about a claim's fee), OOTLE_CLAIM_EVERY_S (600), WALLETD_URL, OOTLE_ACCOUNT.
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -87,15 +87,16 @@ export function charge(ledger, hold, amount) {
   return status(ledger, h.lane);
 }
 
-/** Claims worth making now: what's charged (within the best voucher) and not yet claimed, if at least `min`, or any
- *  such amount on a closing lane. Returns [{voucher, amount}], amount being the new claimed total. */
-export function claimable(ledger, chainOf, min) {
+/** Claims worth making now: what's charged (within the best voucher) and not yet claimed, if at least `min`, or on a
+ *  closing lane, if more than a claim's `fee` (claiming less would cost the router more than it collects).
+ *  Returns [{voucher, amount}], amount being the new claimed total. */
+export function claimable(ledger, chainOf, min, fee = 0) {
   return Object.entries(ledger.lanes).flatMap(([n, l]) => {
     const c = chainOf(Number(n));
     if (!c || !l.voucher || c.closed) return [];
     const amount = Math.min(l.charged, Number(l.voucher.spent_cum));
     const unclaimed = amount - c.claimed;
-    return unclaimed > 0 && (unclaimed >= min || c.close_requested_epoch !== null) ? [{ voucher: l.voucher, amount }] : [];
+    return unclaimed > 0 && (unclaimed >= min || (c.close_requested_epoch !== null && unclaimed > fee)) ? [{ voucher: l.voucher, amount }] : [];
   });
 }
 
@@ -177,7 +178,7 @@ async function main() {
     const claimRound = async () => {
       const chain = new Map();
       for (const n of Object.keys(ledger.lanes)) chain.set(Number(n), await lane(n).catch(() => null));
-      for (const { voucher: v, amount } of claimable(ledger, (n) => chain.get(n), claimMin)) {
+      for (const { voucher: v, amount } of claimable(ledger, (n) => chain.get(n), claimMin, Number(env.OOTLE_CLAIM_FEE ?? 5_000))) {
         try {
           const { instructions, inputs } = calls.claim(acct.component, v, amount);
           const r = await submitInstructions(rpc, { feeAccount: acct.component, signerIndex: acct.index, instructions, inputs, live: true, ...txTarget() });

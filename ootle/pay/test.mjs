@@ -77,6 +77,7 @@ test("claims take what turns were charged, never the whole voucher, and wait for
   assert.deepEqual(claims(4_001), []);
   lanes[1].close_requested_epoch = 9;
   assert.deepEqual(claims(4_001), [[1, 300]]);
+  assert.deepEqual(claimable(ledger, (n) => lanes[n], 4_001, 5_000), [], "a closing lane isn't claimed for less than the claim's fee");
   lanes[1].closed = true;
   ledger.lanes[0].charged = 7_000;
   assert.deepEqual(claims(0), [[0, 5_000]], "never above the voucher");
