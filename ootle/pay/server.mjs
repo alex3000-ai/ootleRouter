@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // ootleRouter's payment service: the gateway asks it to admit a paid turn and then charges what the turn cost.
-// Listens on loopback; every request carries OOTLE_PAY_TOKEN in x-ootle-pay-token.
+// Listens on loopback (or OOTLE_PAY_HOST, when it runs in a container of its own); every request carries
+// OOTLE_PAY_TOKEN in x-ootle-pay-token.
 //
 // A caller pays through an OotleRouterLanes lane to this router's provider key, sending its latest voucher with each
 // request. A lane's balance is its best voucher less what finished turns cost and what running turns hold. A turn
@@ -15,12 +16,12 @@
 //   GET  /lanes/<n>                 -> lane status
 //   GET  /info                      -> what a caller needs to open a lane here
 //
-// Env: OOTLE_PAY_TOKEN, OOTLE_PROVIDER_KEY (hex), OOTLE_PAY_PORT (8090), OOTLE_PAY_LEDGER (./ootle-pay.json),
+// Env: OOTLE_PAY_TOKEN, OOTLE_PROVIDER_KEY (hex), OOTLE_PAY_HOST (127.0.0.1), OOTLE_PAY_PORT (8090), OOTLE_PAY_LEDGER (./ootle-pay.json),
 //      OOTLE_RESERVE (10000 µT), OOTLE_CLAIM_MIN (100000 µT), OOTLE_CLAIM_EVERY_S (600), WALLETD_URL, OOTLE_ACCOUNT.
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { verifyVoucher } from "./keys.mjs";
 
@@ -129,6 +130,10 @@ async function main() {
     return fresh;
   };
 
+  // Constant time: in ootle/public the router's agent tasks can reach this port, so they may time their guesses.
+  const digest = (s) => createHash("sha256").update(String(s ?? "")).digest();
+  const sameToken = (t) => timingSafeEqual(digest(t), digest(token));
+
   const routes = {
     "POST /admit": async ({ voucher }) => {
       const n = Number(voucher?.lane);
@@ -150,7 +155,7 @@ async function main() {
   createServer(async (req, res) => {
     const reply = (code, body) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
     try {
-      if (req.headers["x-ootle-pay-token"] !== token) return reply(401, { code: "unauthorized" });
+      if (!sameToken(req.headers["x-ootle-pay-token"])) return reply(401, { code: "unauthorized" });
       const m = /^\/lanes\/(\d+)$/.exec(req.url);
       if (req.method === "GET" && m) return reply(200, status(ledger, Number(m[1])));
       const route = routes[`${req.method} ${req.url}`];
@@ -161,7 +166,7 @@ async function main() {
     } catch (e) {
       reply(500, { code: "internal_error", message: String(e.message).slice(0, 200) });
     }
-  }).listen(Number(env.OOTLE_PAY_PORT ?? 8090), "127.0.0.1", () => console.log(`[ootle-pay] ready; lanes ${settings.hub}, provider ${providerKey}`));
+  }).listen(Number(env.OOTLE_PAY_PORT ?? 8090), env.OOTLE_PAY_HOST ?? "127.0.0.1", () => console.log(`[ootle-pay] ready; lanes ${settings.hub}, provider ${providerKey}`));
 
   if (env.WALLETD_URL && env.OOTLE_ACCOUNT) {
     const { accountInfo, submitInstructions, walletd } = await import("./tx.mjs");

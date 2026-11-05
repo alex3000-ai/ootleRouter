@@ -18,7 +18,7 @@ The Console's own turns are free; only API-key callers pay.
 | `pay/cli.mjs` | `ootlerouter-lanes`: open, fund, close and refund lanes; sign vouchers; claim |
 | `prices.json` | µT per `harness.session_minute` and per 1k tokens (`llm.<model>.<kind>`; `llm.*.<kind>` for any model) |
 | `deploy/publish.mjs` | publishes the contract and creates the component; writes `deployments/<network>.json` |
-| `public/` | `up.sh` / `down.sh`: a public router on an isolated network behind a tunnel |
+| `public/` | `up.sh` / `down.sh`: a public router as a Tor onion service, on networks with no way out |
 | `../gateway/ootle_pay.py` | the gateway's side |
 
 ## Run a paid router

@@ -60,8 +60,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # it the agent-server dies on import (`ModuleNotFoundError` / a tmux that is not there), which is a
 # failure at START, not at use. The locale above matters to it too: libtmux's format parsing needs
 # a UTF-8 locale, which LANG=C.UTF-8 already gives.
+# iptables: HR_TASK_EGRESS=loopback (docker/entrypoint.sh) keeps agent processes to this container's loopback.
 RUN apt-get update -y && apt-get install -y --no-install-recommends \
-        curl ca-certificates git bash tini tmux \
+        curl ca-certificates git bash tini tmux iptables \
     && rm -rf /var/lib/apt/lists/*
 
 # Document preview. The built-in skills create .docx/.pptx/.xlsx routinely, and LibreOffice is

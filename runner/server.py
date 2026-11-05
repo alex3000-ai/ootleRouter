@@ -4329,7 +4329,7 @@ def _mcp_through_relay(servers: list[dict] | None) -> list[dict]:
         with _MCP_RELAY["lock"]:
             if _MCP_RELAY["server"] is None:
                 srv = _QuietHTTPServer(("127.0.0.1", 0), _McpRelayHandler)
-                threading.Thread(target=srv.serve_forever, daemon=True).start()
+                _serve_relay(srv)
                 _MCP_RELAY["server"], _MCP_RELAY["port"] = srv, srv.server_address[1]
             tok = "hr-mcp-" + uuid.uuid4().hex
             _MCP_RELAY["routes"][tok] = {"url": url, "headers": _mcp_headers(s), "endpoints": {}}
@@ -6422,6 +6422,20 @@ class _RelayNoRedirect(urllib.request.HTTPRedirectHandler):
 _RELAY_OPENER = urllib.request.build_opener(_RelayNoRedirect)
 
 
+def _serve_relay(srv) -> None:
+    """Serves a relay on a thread of its own, under root's filesystem uid, as are the threads it starts per request.
+
+    The builders start relays inside a turn's _fs_as(session) scope, and a thread inherits that. The relays only
+    talk to the network, and an iptables owner rule reads the uid on their sockets: Linux takes it from the
+    filesystem uid when a socket is made, gVisor from the thread's identity as each packet goes. Under
+    HR_TASK_EGRESS=loopback (docker/entrypoint.sh) the runner's own call to the model was otherwise taken for
+    the agent's and refused (runc), or stalled once its answer began to stream back (gVisor)."""
+    def serve():
+        with _fs_as(0):
+            srv.serve_forever()
+    threading.Thread(target=serve, daemon=True).start()
+
+
 class _HermesRelayHandler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -7522,7 +7536,7 @@ def _qoder_relay_route(base_url: str, api_key: str) -> tuple[str, str]:
     with _HERMES_RELAY["lock"]:
         if _HERMES_RELAY["server"] is None:
             srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _HermesRelayHandler)
-            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            _serve_relay(srv)
             _HERMES_RELAY["server"], _HERMES_RELAY["port"] = srv, srv.server_address[1]
         tok = "hr-relay-" + uuid.uuid4().hex
         _HERMES_RELAY["routes"][tok] = ((base_url or "").rstrip("/"), api_key,
@@ -7539,7 +7553,7 @@ def _image_relay_route(base_url: str, api_key: str) -> tuple[str, str]:
     with _HERMES_RELAY["lock"]:
         if _HERMES_RELAY["server"] is None:
             srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _HermesRelayHandler)
-            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            _serve_relay(srv)
             _HERMES_RELAY["server"], _HERMES_RELAY["port"] = srv, srv.server_address[1]
         tok = "hr-relay-" + uuid.uuid4().hex
         _HERMES_RELAY["routes"][tok] = ((base_url or "").rstrip("/"), api_key,
@@ -7552,7 +7566,7 @@ def _bedrock_anthropic_route(origin: str, api_key: str) -> tuple[str, str]:
     with _HERMES_RELAY["lock"]:
         if _HERMES_RELAY["server"] is None:
             srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _HermesRelayHandler)
-            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            _serve_relay(srv)
             _HERMES_RELAY["server"], _HERMES_RELAY["port"] = srv, srv.server_address[1]
         tok = "hr-relay-" + uuid.uuid4().hex
         _HERMES_RELAY["routes"][tok] = (origin, api_key,
@@ -7805,7 +7819,7 @@ def _cloud_route(upstream: str, cred, flags: dict) -> tuple[str, str]:
     with _HERMES_RELAY["lock"]:
         if _HERMES_RELAY["server"] is None:
             srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _HermesRelayHandler)
-            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            _serve_relay(srv)
             _HERMES_RELAY["server"], _HERMES_RELAY["port"] = srv, srv.server_address[1]
         tok = "hr-relay-" + uuid.uuid4().hex
         _HERMES_RELAY["routes"][tok] = (upstream, cred, _turn_route({**flags, "path_token": True,
@@ -8177,7 +8191,7 @@ def _gemini_relay_route(host_root: str, api_key: str, model: str = "", native_mo
     with _HERMES_RELAY["lock"]:
         if _HERMES_RELAY["server"] is None:
             srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _HermesRelayHandler)
-            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            _serve_relay(srv)
             _HERMES_RELAY["server"], _HERMES_RELAY["port"] = srv, srv.server_address[1]
         tok = "hr-relay-" + uuid.uuid4().hex
         _HERMES_RELAY["routes"][tok] = (host_root.rstrip("/"), api_key,
@@ -8225,7 +8239,7 @@ def _hermes_relay_route(base_url: str, api_key: str, drop_fields: tuple[str, ...
     with _HERMES_RELAY["lock"]:
         if _HERMES_RELAY["server"] is None:
             srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _HermesRelayHandler)
-            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            _serve_relay(srv)
             _HERMES_RELAY["server"], _HERMES_RELAY["port"] = srv, srv.server_address[1]
         tok = "hr-relay-" + uuid.uuid4().hex
         # The relay joins the client's resource ("/chat/completions", "/messages") onto this base,
@@ -11477,7 +11491,7 @@ def _systemone_relay_route(provider: str, base_url: str, api_key: str) -> tuple[
     with _HERMES_RELAY["lock"]:
         if _HERMES_RELAY["server"] is None:
             srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _HermesRelayHandler)
-            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            _serve_relay(srv)
             _HERMES_RELAY["server"], _HERMES_RELAY["port"] = srv, srv.server_address[1]
         tok = "hr-relay-" + uuid.uuid4().hex
         _HERMES_RELAY["routes"][tok] = (base, api_key, dict(_route_trace_flag()))

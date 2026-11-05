@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# Takes the public test offline: the tunnel, the router, the relay, their network and the forwarder.
-# --purge also deletes the router's data volume (its database, API keys, payment ledger and workspaces).
+# Takes the router offline: its containers, networks and the model forwarder.
+# --purge also deletes its volumes: the router's data (database, API keys, workspaces), the payment ledger and the onion
+# addresses. --purge-wallet deletes the router's wallet as well: sweep its funds out first, its keys go with it.
 set -uo pipefail
 STATE="${XDG_RUNTIME_DIR:-/tmp}/ootlerouter-public"
-docker rm -f ootlerouter-tunnel ootlerouter-public ootlerouter-relay 2>/dev/null
-docker network rm ootlerouter-public-net 2>/dev/null
+C="ootlerouter-gate ootlerouter-public ootlerouter-install ootlerouter-pay ootlerouter-relay ootlerouter-tor ootlerouter-tunnel"
+N="ootlerouter-front ootlerouter-back ootlerouter-egress ootlerouter-public-net"
+V="ootlerouter-public-data ootlerouter-pay ootlerouter-tor ootlerouter-secrets"
+[ "${1:-}" = "--purge-wallet" ] && V="$V ootlerouter-wallet"
+docker rm -f $C >/dev/null 2>&1
+docker network rm $N >/dev/null 2>&1
 [ -f "$STATE/forwarder.pid" ] && kill "$(cat "$STATE/forwarder.pid")" 2>/dev/null
 rm -rf "$STATE"
-[ "${1:-}" = "--purge" ] && docker volume rm ootlerouter-public-data 2>/dev/null
+[[ "${1:-}" == --purge* ]] && docker volume rm $V >/dev/null 2>&1
 echo "[down] left behind:"
-docker ps -a --format '{{.Names}}' | grep -E '^ootlerouter-(tunnel|public|relay)$' || echo "  no containers"
-docker network ls --format '{{.Name}}' | grep -x ootlerouter-public-net || echo "  no network"
-docker volume ls --format '{{.Name}}' | grep -x ootlerouter-public-data || echo "  no volume"
+docker ps -a --format '{{.Names}}' | grep -xE "${C// /|}" || echo "  no containers"
+docker network ls --format '{{.Name}}' | grep -xE "${N// /|}" || echo "  no networks"
+docker volume ls --format "{{.Name}}" | grep -xE "${V// /|}|ootlerouter-wallet" || echo "  no volumes"

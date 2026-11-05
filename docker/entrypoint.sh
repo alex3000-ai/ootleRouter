@@ -24,6 +24,37 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 PRODUCT=agent
+
+# ── agent egress ──────────────────────────────────────────────────────────────
+# HR_TASK_EGRESS=loopback: off this container's loopback, only root (the runner, which makes the model calls) and the
+# product user (the gateway, which calls the payment service) may connect. Every session uid, so every agent process
+# and anything it starts, gets loopback only, where the runner's relays are. ootle/public/up.sh sets it. An allowlist,
+# not a rule naming the session uids: gVisor accepts a uid-range rule and then doesn't enforce it (measured).
+# Fails closed. The rules need CAP_NET_ADMIN (and, in gVisor, CAP_NET_RAW) once, here; this script then starts again
+# without them in its bounding set, so no process after this (the runner, the gateway, any task) can change them.
+# runc: the nft backend, REJECT. gVisor (runsc --net-raw): the legacy backend, DROP (its REJECT hangs the caller).
+if [ "${HR_TASK_EGRESS:-}" = loopback ] && [ -z "${HR_TASK_EGRESS_SET:-}" ]; then
+  wall() {
+    "$1" -A OUTPUT -o lo -j ACCEPT && "$1" -A OUTPUT -m owner --uid-owner 0 -j ACCEPT &&
+      "$1" -A OUTPUT -m owner --uid-owner "$(id -u "$PRODUCT")" -j ACCEPT && "$1" -A OUTPUT -j "$2"
+  }
+  v4=""
+  for t in "iptables REJECT" "iptables-legacy DROP"; do
+    ipt="${t% *}" target="${t#* }"
+    if wall "$ipt" "$target" 2>/dev/null; then v4="$ipt" deny="$target"; break; fi
+    "$ipt" -F OUTPUT 2>/dev/null || true
+  done
+  if [ -z "$v4" ]; then
+    echo "[harnessrouter] ERROR: HR_TASK_EGRESS=loopback, but iptables can't be set here. runc needs --cap-add NET_ADMIN; gVisor runsc --net-raw and NET_RAW too."
+    exit 1
+  fi
+  if ! wall "${v4/iptables/ip6tables}" "$deny" 2>/dev/null && grep -qv ' lo$' /proc/net/if_inet6 2>/dev/null; then
+    echo "[harnessrouter] ERROR: HR_TASK_EGRESS=loopback, but ip6tables can't be set and this container has IPv6."
+    exit 1
+  fi
+  echo "[harnessrouter] agent egress: only root and $PRODUCT connect beyond loopback ($v4, $deny)"
+  exec env HR_TASK_EGRESS_SET=1 setpriv --bounding-set -net_admin,-net_raw,-setpcap "$0" "$@"
+fi
 # Root must never read or run anything the product user can change, or a bug in the gateway or the
 # console (which run as that user) becomes root at the next start (reported privately,
 # GHSA-mm72-wr37-26pv). So: the image's /app is root's; root has its own HOME, where npm, pip and
@@ -1884,7 +1915,12 @@ pids+=($!)
 
 # ootleRouter payments (ootle/README.md), on when OOTLE_PROVIDER_KEY names this router's provider key. Exported only
 # now, after the runner started, so no agent the runner spawns can read the service's token.
-if [ -n "${OOTLE_PROVIDER_KEY:-}" ]; then
+# With OOTLE_PAY_URL set, the service runs in a container of its own (ootle/public) and its token comes from a file
+# read only now, so neither the installers above nor the runner ever had it.
+if [ -n "${OOTLE_PAY_URL:-}" ]; then
+  OOTLE_PAY_TOKEN="$(cat "${OOTLE_PAY_TOKEN_FILE:?OOTLE_PAY_URL needs OOTLE_PAY_TOKEN_FILE}")"
+  export OOTLE_PAY_TOKEN OOTLE_PRICES="${OOTLE_PRICES:-/app/ootle/prices.json}"
+elif [ -n "${OOTLE_PROVIDER_KEY:-}" ]; then
   export OOTLE_PAY_URL=http://127.0.0.1:8090 OOTLE_PRICES="${OOTLE_PRICES:-/app/ootle/prices.json}" \
     OOTLE_PAY_LEDGER="$DATA_DIR/ootle-pay.json"
   export OOTLE_PAY_TOKEN="${OOTLE_PAY_TOKEN:-$("$PY" -I -c 'import secrets; print(secrets.token_hex(32))')}"
