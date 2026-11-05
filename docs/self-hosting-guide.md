@@ -533,6 +533,18 @@ Some things can't be hidden from it:
 
 Every release is checked for this: a planted value in each kind of credential, one task per base, and the release fails if one reaches a session or a response.
 
+### Keeping agents off the network
+
+By default an agent can open any connection the container can: the internet, your network, and services on the host. Where the work needs none of that, `HR_TASK_EGRESS=loopback` keeps every agent process, and anything it starts, to the container's own loopback. Its model calls and MCP tools still work, because they go through the runner's relays there, and the runner makes the upstream call. Its own requests to anywhere else don't: a harness's web fetch, `pip install` or `git clone` in a task fails.
+
+```bash
+docker run -e HR_TASK_EGRESS=loopback --cap-add NET_ADMIN ...
+```
+
+The entrypoint sets an iptables allowlist before anything else starts. Beyond loopback, only root (the runner) and the console's user may connect. It then drops `NET_ADMIN` from every process's bounding set, so nothing in the container can change the rules later. If the rules can't be set, the container refuses to start.
+
+Under gVisor, run `runsc` with `--net-raw` and add `--cap-add NET_RAW` too: gVisor implements iptables only with raw sockets on, through the legacy backend. Measured there: a rule naming the session uids by range is accepted but not enforced, which is why the rule is an allowlist, and `REJECT` leaves the caller hanging, which is why gVisor gets `DROP`.
+
 ## Starter kits
 
 Starter kits are worked examples, and they are here to show you what this can be pointed at.
