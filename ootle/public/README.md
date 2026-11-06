@@ -36,9 +36,9 @@ ootle/public/up.sh ~/ootlerouter.env
 [up] console (you):     http://<56 characters>.onion
 ```
 
-The first start takes a few minutes: it downloads the images
-(`ghcr.io/alex3000-ai/ootlerouter`, `…/ootlerouter-edge`) and installs the agent harnesses into the router's data
-volume, in a throwaway container. Later starts take seconds. The onion addresses, the console key and the wallet
+The first start can take half an hour: it downloads the images (`ghcr.io/alex3000-ai/ootlerouter` is about
+3 GB, `…/ootlerouter-edge` much less) and installs the agent harnesses into the router's data volume, in a throwaway
+container. Later starts take a minute or two. The onion addresses, the console key and the wallet
 are kept, so they stay the same from one `up.sh` to the next. `OR_BUILD=1` builds both images from your checkout
 instead of downloading them.
 

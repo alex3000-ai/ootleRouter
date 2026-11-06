@@ -42,14 +42,16 @@ automatically, `WALLETD_URL` (and `WALLETD_TOKEN`) plus `OOTLE_ACCOUNT` (a walle
 
 A public router has an onion address, so these go through Tor: run a Tor client and add
 `--socks5-hostname 127.0.0.1:9050` to each `curl` (port 9150 while Tor Browser is open, if you use its). `$BASE` is the address its host gave you, ending in
-`/api/harness`; `$KEY` the API key they gave you. Opening, closing and refunding a lane goes through your own walletd.
+`/api/harness`; `$KEY` the API key they gave you. Opening, closing and refunding a lane goes through your own walletd
+(0.49 or later): point the CLI at it with `WALLETD_URL` (e.g. `http://127.0.0.1:5100/json_rpc`) and its API key or
+cookie file in `WALLETD_TOKEN_FILE`, and name your account with `--account`.
 
 ```bash
 cd ootle/pay && npm install
 curl -H "Authorization: Bearer $KEY" $BASE/v1/ootle             # component, provider_key, reserve, prices
 node cli.mjs keygen --out voucher.key                           # prints the voucher public key
-node cli.mjs open --account me <provider_key> 1000000 <voucher public key> --live   # prints the lane number
-V=$(node cli.mjs voucher --key-file voucher.key <lane> 50000)   # allow up to 0.05 TARI in all
+node cli.mjs open --account <your account> <provider_key> 30000 <voucher public key> --live   # prints the lane number
+V=$(node cli.mjs voucher --key-file voucher.key <lane> 20000)   # allow up to 0.02 TARI in all
 curl $BASE/v1/responses -H "Authorization: Bearer $KEY" -H "X-Ootle-Voucher: $V" -H 'content-type: application/json' \
   -d '{"input":"Reply with exactly: it works.","metadata":{"harness_id":"opencode"},"model":"<the host's model>"}'
 curl -H "Authorization: Bearer $KEY" $BASE/v1/ootle/lanes/<lane>  # charged so far and balance
