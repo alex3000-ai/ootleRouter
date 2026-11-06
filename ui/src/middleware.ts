@@ -51,6 +51,11 @@ function isPublic(path: string): boolean {
     // metadata — no user data.
     || path === '/api/harness/v1/uhp'
     || path === '/api/harness/v1/openapi.json'
+    // ootleRouter: a hiring agent has no key until it pays. It reads how to pay here, and trades a voucher on an
+    // Ootlebook lane to this router for a key of that lane's own; the voucher is the credential. The gateway checks
+    // it with the payment service, and these routes reach nothing else.
+    || path === '/api/harness/v1/ootle'
+    || path === '/api/harness/v1/ootle/keys'
     // A shared task is FOR people without an account: the link is the credential. The page and
     // the data it fetches are public; what they reveal is decided by the gateway, which answers
     // only for a token whose owner has sharing switched on, and with nothing but that session.

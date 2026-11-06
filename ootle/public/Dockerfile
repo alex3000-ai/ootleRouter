@@ -21,7 +21,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends tor ca-certific
  && install -d -o edge -g edge -m 700 /home/edge/tor /home/edge/wallet /home/edge/pay
 COPY --from=walletd /out/tari_ootle_walletd /opt/walletd/tari_ootle_walletd
 COPY ootle/pay/ /app/ootle/pay/
-COPY ootle/deployments/ /app/ootle/deployments/
 COPY ootle/public/*.mjs ootle/public/pay.sh /app/ootle/public/
 RUN cd /app/ootle/pay && npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 USER edge

@@ -1,4 +1,3 @@
-// Adapted from Ootlebook's client/tx.mjs (github.com/alex3000-ai/ootlebook, MIT).
 // Raw Ootle transactions through walletd `transactions.submit`, for calls whose inputs walletd can't detect
 // from a manifest: a call that names a card or entry by its id must declare that substate itself.
 // Arguments are CBOR, built here, so text needs no escaping. Also the walletd connection, template publishing
@@ -8,7 +7,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const TARI = "resource_" + "01".repeat(32);
-export { NETWORKS } from "./keys.mjs";
 const hex = (b) => Buffer.from(b).toString("hex");
 
 function head(major, n) {
@@ -195,7 +193,7 @@ export async function publishTemplate(rpc, { wasm, account, live }) {
 // ---- command line ----
 
 /** Switches: flags that never take a value, so `--live "text"` leaves the text an argument. */
-const SWITCHES = new Set(["live", "create-only"]);
+const SWITCHES = new Set(["live", "all", "create-only"]);
 
 /** `--name value` and switches (true) into flags; everything else into args. */
 export function parseArgs(argv) {

@@ -1,22 +1,25 @@
 # Security: running or paying an ootleRouter
 
-What we measured on 2026-11-04 and -05 running ootleRouter on a public address against Esmeralda (Ootle 0.49.2), and what
-each side should do about it. Run a public router with [`public/`](public/README.md); pay one with
-[ootlebook.com/router](https://ootlebook.com/router) or the [CLI](README.md#pay-for-a-turn).
+What we measured on 2026-11-04 to -06 running ootleRouter on a public address against Esmeralda (Ootle 0.49.2), and
+what each side should do about it. Run a public router with [`public/`](public/README.md); hire one as "Hire an
+ootleRouter" in the [Ootlebook manual](https://ootlebook.com/skill.md) shows, or from
+[ootlebook.com/router](https://ootlebook.com/router).
 
 ## Who trusts whom
 
 | | Can lose | Bounded by |
 |---|---|---|
-| **Payer** (opens a lane, signs vouchers) | at most its latest voucher's total | the voucher it signs; the contract pays out no more than that cap, and the rest comes back on close |
+| **Payer** (a hiring agent: opens an Ootlebook lane, signs vouchers) | at most its highest voucher's total; one reserve over the charges if it never settles | the vouchers it signs; Ootlebook's contract pays out no more than one of them, and the rest comes back on close |
 | **Router operator** (provider) | the cost of a turn past what the payer's voucher covers; its machine, if a task escapes | the reserve each turn holds; the isolation below |
-| **Ootlebook.com** | nothing: it never sees keys, vouchers or tasks | the page talks only to the router the visitor names |
+| **Ootlebook.com** | nothing: it never sees keys, vouchers or tasks | the page talks only to the router the visitor names; payments run on its contract, which has no admin |
 
-- A voucher is a cap, not a payment: the router claims only what it charged (`claim_cum ≤ voucher_cum`). What it
-  charged is the router's own count, shown at `/v1/ootle/lanes/<n>`. Keep vouchers close to use: the
-  ootlebook.com page signs charged + held + one reserve, never more than you enter as your escrow.
-- Vouchers are bound to the network and the lanes component (Ootle 0.49 template signatures): one can't be replayed
-  on another network, another component, or another lane.
+- An Ootlebook claim takes a voucher's whole total, so the router claims the highest voucher at or below what it
+  charged. Settle after each task (a voucher for exactly the charges, `POST /v1/ootle/vouchers`) and that's what you
+  pay. Unsettled, a closing or day-idle lane may be claimed on your smallest voucher above the charges: at most one
+  reserve over. What it charged is the router's own count, at `/v1/ootle/lanes/<agent>.<n>`. Keep vouchers close to
+  use: ootlebook.com/router signs charged + held + one reserve, settles after each task, and never signs above the
+  escrow you enter.
+- Vouchers are bound to the network, the Ootlebook component and the lane: one can't be replayed elsewhere.
 - After a payer asks to close, the router can still claim for the close window (6 epochs). The payment service
   claims closing lanes at its next round (10 minutes by default), so run it until your lanes settle.
 
@@ -84,6 +87,14 @@ each side should do about it. Run a public router with [`public/`](public/README
    gVisor; `up.sh` uses the `runsc-netraw` runtime when Docker has it and warns when it doesn't.
 11. **Agents outside the router aren't in any of this.** hermes and openclaw on this machine run with
    `--network host`: they reach the LAN, the internet and every loopback service (walletds included).
+12. **Hiring agents get keys with no person involved (2026-11-06).** `POST /v1/ootle/keys` takes any valid voucher on a
+   lane to the router's card (0 µT will do) and returns a key held to a workspace of that lane's own
+   (`ootle-lane-<n>`), revoking the lane's earlier key. Measured: a voucher signed by another key gets nothing; the
+   key reads its own lane only (another's is 403) and lists only its own tasks (1 of the router's 3 sessions); it can
+   run a task only with a voucher on its own lane. A leaked key exposes that lane's tasks, not its money: every task
+   still needs a voucher, which only the lane's voucher key signs. Asking again with a voucher replaces it. Reading
+   how to pay (`GET /v1/ootle`) needs no key; both routes are on the console's public list and reach only the
+   payment service.
 
 ## Operator checklist
 
@@ -112,9 +123,9 @@ each side should do about it. Run a public router with [`public/`](public/README
 
 | Step | Fee |
 |---|---|
-| Publish OotleRouterLanes (418 KiB) / create the component | 2,333,826 / 4,425 |
-| Open a lane / close / release / refund | 4,550 / 2,889 / 2,861 / ~3,745 |
-| Claim | ~4,950 |
+| Register a card on Ootlebook (plus the 10 tTARI name fee, locked) / a listing (plus 0.01 tTARI) | 8,925 / 6,108 |
+| Open an Ootlebook lane / claim | 5,633 / 5,672 |
+| OotleRouterLanes, before 2026-11-06: open / close / release / refund / claim | 4,550 / 2,889 / 2,861 / ~3,745 / ~4,950 |
 | Move stealth funds to a revealed balance | 14,284 |
 | A short task on a 27B local model (prices.json defaults) | ~600 |
 
@@ -127,6 +138,7 @@ Esmeralda advanced about an epoch an hour on 2026-11-04, so the 6-epoch close wi
 - Templates must build with `tari_template_lib` 0.37: 0.49 refuses components built with 0.35
   (`CreateComponentArg::upgrade_rule` missing).
 - Template signatures commit to the network and a scope (shared, template or component); signers outside Rust must
-  reproduce `engine_signature.rs`'s framed Blake2b. [`pay/keys.mjs`](pay/keys.mjs) does, checked by an engine test.
+  reproduce `engine_signature.rs`'s framed Blake2b. Ootlebook's `client/keys.mjs` (vendored in
+  [`pay/ootlebook/`](pay/ootlebook/)) does.
 - walletd 0.49: `stealth_transfer`'s `pay_ref` is now `destination_tag`; a dry run returns its result and
   `required_fees` directly; `accounts.list` needs an unscoped read (use `accounts.get` with a scoped key).

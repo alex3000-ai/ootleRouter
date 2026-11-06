@@ -22,11 +22,11 @@ if [ "${OR_BUILD:-}" = 1 ]; then
   docker build -q -f "$HERE/Dockerfile" -t "$EDGE" "$ROOT" >/dev/null
 else
   echo "[up] images: $IMAGE, $EDGE"
-  docker pull -q "$IMAGE" >/dev/null && docker pull -q "$EDGE" >/dev/null
+  docker pull -q "$IMAGE" >/dev/null 2>&1 || docker image inspect "$IMAGE" >/dev/null; docker pull -q "$EDGE" >/dev/null 2>&1 || docker image inspect "$EDGE" >/dev/null
 fi
 edge() { docker run --rm "$EDGE" "$@"; }
-DEPLOYMENT="${OR_DEPLOYMENT:-esmeralda.json}" DEPLOYMENT="${DEPLOYMENT##*/}"
-read -r NETWORK INDEXER < <(edge node -p "const d = require('/app/ootle/deployments/$DEPLOYMENT'); d.network + ' ' + d.indexer")
+# Ootlebook's deployment, which the payment service's lanes are on.
+read -r NETWORK INDEXER < <(edge node -p "const d = require('/app/ootle/pay/deployments/esmeralda.json'); d.network + ' ' + d.indexer")
 INDEXER_HOST="${INDEXER#*://}" INDEXER_HOST="${INDEXER_HOST%%[:/]*}"
 # The console's password: yours, or one made here once and kept beside the onion key.
 PASSWORD_FILE="${OR_PASSWORD_FILE:-$KEYS/console-password}"
@@ -97,8 +97,8 @@ docker create --name ootlerouter-pay --network "$EGRESS" --ip "$PAY_E" --restart
   -v ootlerouter-wallet:/home/edge/wallet -v ootlerouter-pay:/home/edge/pay \
   -e NETWORK="$NETWORK" -e INDEXER="$INDEXER" -e OOTLE_ACCOUNT="${OR_ACCOUNT:-router}" -e OOTLE_PAY_TOKEN="$PAY_TOKEN" \
   -e OOTLE_PAY_HOST="$PAY_B" -e OOTLE_PAY_LEDGER=/home/edge/pay/ootle-pay.json \
-  -e OOTLE_LANES_DEPLOYMENT="/app/ootle/deployments/$DEPLOYMENT" \
-  ${OOTLE_RESERVE:+-e OOTLE_RESERVE} ${OOTLE_CLAIM_MIN:+-e OOTLE_CLAIM_MIN} ${OOTLE_CLAIM_FEE:+-e OOTLE_CLAIM_FEE} ${OOTLE_CLAIM_EVERY_S:+-e OOTLE_CLAIM_EVERY_S} \
+  ${OR_AGENT:+-e OOTLE_PROVIDER_AGENT="$OR_AGENT"} \
+  ${OOTLE_RESERVE:+-e OOTLE_RESERVE="$OOTLE_RESERVE"} ${OOTLE_CLAIM_MIN:+-e OOTLE_CLAIM_MIN="$OOTLE_CLAIM_MIN"} ${OOTLE_CLAIM_FEE:+-e OOTLE_CLAIM_FEE="$OOTLE_CLAIM_FEE"} ${OOTLE_CLAIM_EVERY_S:+-e OOTLE_CLAIM_EVERY_S="$OOTLE_CLAIM_EVERY_S"} \
   "$EDGE" /app/ootle/public/pay.sh >/dev/null
 docker network connect --ip "$PAY_B" "$BACK" ootlerouter-pay
 docker start ootlerouter-pay >/dev/null

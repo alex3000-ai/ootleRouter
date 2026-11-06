@@ -1,6 +1,6 @@
 // Prints the public key of the router's account in its own wallet, making the account first if there is none.
 // The address to fund goes to stderr (the log).   node account.mjs <account name>
-import { walletd } from "../pay/tx.mjs";
+import { walletd } from "../pay/ootlebook/tx.mjs";
 
 const name = process.argv[2];
 const rpc = walletd();

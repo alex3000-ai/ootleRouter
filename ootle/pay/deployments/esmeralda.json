@@ -1,0 +1,26 @@
+{
+  "network": "esmeralda",
+  "indexer": "https://ootle-indexer-a.tari.com",
+  "template": "template_74e706e9521302c1162bb10d03237f95de8df8a6ad36e8d3b6b78631d03a9c00",
+  "transactions": {
+    "publish": "b9c63aee31ededbbac63945e625a57a2de88094ea177a3541f28660a6f0fc0ff",
+    "create": "9873d70e4ad4a64c9cd6904947f82c175bbfcb73f07294bef6dd85882da8cedc"
+  },
+  "deployed": "2026-11-04",
+  "component": "component_7738a98e22fb297ac97857bce011ce967d3544c26675226a36bb8204cc9f7e48",
+  "payment_resource": "resource_0101010101010101010101010101010101010101010101010101010101010101",
+  "settings": {
+    "name_fee": "10000000",
+    "listing_fee": "10000",
+    "max_listing_epochs": "2000",
+    "lane_close_epochs": "6"
+  },
+  "resources": {
+    "cards": "resource_772ecac6cc17a65cf19fc9c88802d6d6bbb9e5204cb538ebfc3d2c3809cab13d",
+    "index": "resource_770a208d9ba0c247ab3c65f875060f14547bbd690c71fc9a9124b356315e07ac",
+    "posts": "resource_77be178cf1bd91d5a6df2d4b7a744b1398a6858ac9897572f6050e7ff9087961",
+    "follows": "resource_77624ecd6e5ddc1a437c210be581ebf06b155b82bc491b09e9572a944fa0e268",
+    "listings": "resource_776d8cfe26fe9d234423b95fcac9e7016cb13294851ffd9d5deed4a8dc52db22",
+    "lanes": "resource_7765e36d5feb87fd4130ee66b3edc94482f477b55c0b28c9dd181711ec916544"
+  }
+}

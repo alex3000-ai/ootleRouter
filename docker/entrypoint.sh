@@ -1913,14 +1913,14 @@ fi
     HR_SESSION_UIDS=1 "$PY" -m uvicorn server:app --host 127.0.0.1 --port 8081 --log-level warning ) &
 pids+=($!)
 
-# ootleRouter payments (ootle/README.md), on when OOTLE_PROVIDER_KEY names this router's provider key. Exported only
+# ootleRouter payments (ootle/README.md), on when OOTLE_PROVIDER_AGENT names this router's Ootlebook card. Exported only
 # now, after the runner started, so no agent the runner spawns can read the service's token.
 # With OOTLE_PAY_URL set, the service runs in a container of its own (ootle/public) and its token comes from a file
 # read only now, so neither the installers above nor the runner ever had it.
 if [ -n "${OOTLE_PAY_URL:-}" ]; then
   OOTLE_PAY_TOKEN="$(cat "${OOTLE_PAY_TOKEN_FILE:?OOTLE_PAY_URL needs OOTLE_PAY_TOKEN_FILE}")"
   export OOTLE_PAY_TOKEN OOTLE_PRICES="${OOTLE_PRICES:-/app/ootle/prices.json}"
-elif [ -n "${OOTLE_PROVIDER_KEY:-}" ]; then
+elif [ -n "${OOTLE_PROVIDER_AGENT:-}" ]; then
   export OOTLE_PAY_URL=http://127.0.0.1:8090 OOTLE_PRICES="${OOTLE_PRICES:-/app/ootle/prices.json}" \
     OOTLE_PAY_LEDGER="$DATA_DIR/ootle-pay.json"
   export OOTLE_PAY_TOKEN="${OOTLE_PAY_TOKEN:-$("$PY" -I -c 'import secrets; print(secrets.token_hex(32))')}"

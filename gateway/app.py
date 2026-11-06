@@ -59,7 +59,7 @@ import sql_plane             # the read-only SQL data plane (gate, row cap, intr
 import control_store  # durable transactional control state (idempotency / lease / monotonic cancel)
 import setup_compose         # New setup: the rules every built configuration is held to
 import setup_builder         # New setup: the built-in builder, saving into the person's workspace
-import ootle_pay             # pay-per-use in tTARI through OotleRouterLanes
+import ootle_pay             # pay-per-use in tTARI through Ootlebook's payment lanes
 
 POOL_ENDPOINT = os.environ.get("POOL_MGMT_ENDPOINT", "").rstrip("/")
 VAULT_URL = os.environ.get("VAULT_URL", "").rstrip("/")
@@ -10754,21 +10754,72 @@ def _want_partial(backend: str, meta: dict) -> bool:
 
 @app.get("/v1/ootle")
 async def ootle_info(request: Request):
-    """How to pay here: the lanes component, this router's provider key, the reserve a turn holds and the
-    prices, all in µT."""
-    await _principal(request)
+    """How to pay here, for anyone (a hiring agent has no key yet): the Ootlebook component, this router's card,
+    the reserve a turn holds and the prices, all in µT."""
     if not ootle_pay.enabled():
         raise uhp_error(404, "not_found", "This instance takes no Ootle payments.")
     await _refresh_pricing_table()
     return {**await ootle_pay.get(_client(), "/info"), "prices": _pricing_table.get("system", {})}
 
 
+# A lane's key is held to a workspace of the lane's own: its tasks are that workspace's, so no other lane's key, and no
+# key of another workspace, reaches them (_scope_keeps). The org is the self-hosted console's own.
+_OOTLE_ORG = "local"
+_OOTLE_LANE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}\.(\d+)$")
+
+
+def _ootle_lane_ws(lane: str) -> str:
+    return f"ootle-lane-{_OOTLE_LANE.match(lane).group(1)}"
+
+
+def _ootle_own_lane(principal: dict, lane: str) -> None:
+    """A lane's key reaches its own lane only."""
+    scope = _key_scope(principal)
+    if scope.startswith("ootle-lane-") and not (_OOTLE_LANE.match(lane) and scope == _ootle_lane_ws(lane)):
+        raise uhp_error(403, "forbidden", "This key belongs to another lane.", "X-Ootle-Voucher")
+
+
+@app.post("/v1/ootle/keys")
+async def ootle_lane_key(request: Request):
+    """A key for the caller's lane, for a voucher on it: whoever holds a lane's voucher key gets one, with no person
+    handing it out. The lane's earlier key stops working, so a key that leaked is replaced by asking again."""
+    if not ootle_pay.enabled():
+        raise uhp_error(404, "not_found", "This instance takes no Ootle payments.")
+    try:
+        lane = str((await ootle_pay.offer(_client(), request.headers.get(ootle_pay.HEADER)))["lane"])
+    except ootle_pay.Refused as e:
+        raise uhp_error(402, str(e.detail.get("code") or "payment_required"), str(e), "X-Ootle-Voucher", e.detail)
+    ws = _ootle_lane_ws(lane)
+    for row in await BACKING.graph.find("HarnessApiKey", {"org": _OOTLE_ORG}):
+        if str(row.get("workspace") or "") == ws and row.get("id"):
+            await _revoke_api_key(str(row["id"]))
+    tok, h = await _store_api_key(_OOTLE_ORG, f"lane:{lane}", f"lane {lane}", ws, False)
+    return {"key": tok, "id": h, "lane": lane, "workspace": ws,
+            "note": "store this key now; it is shown only once. Asking again replaces it."}
+
+
+@app.post("/v1/ootle/vouchers")
+async def ootle_offer_voucher(request: Request):
+    """Hands the router a voucher without starting a turn: one for exactly what was charged (GET /v1/ootle/lanes/<id>)
+    is what it claims, so the lane pays exactly its charges."""
+    principal = await _principal(request)
+    if not ootle_pay.enabled():
+        raise uhp_error(404, "not_found", "This instance takes no Ootle payments.")
+    try:
+        voucher = ootle_pay.voucher_of(request.headers.get(ootle_pay.HEADER)) or {}
+        _ootle_own_lane(principal, str(voucher.get("lane") or ""))
+        return await ootle_pay.offer(_client(), request.headers.get(ootle_pay.HEADER))
+    except ootle_pay.Refused as e:
+        raise uhp_error(402, str(e.detail.get("code") or "payment_required"), str(e), "X-Ootle-Voucher", e.detail)
+
+
 @app.get("/v1/ootle/lanes/{lane}")
-async def ootle_lane(lane: int, request: Request):
+async def ootle_lane(lane: str, request: Request):
     """A lane as this router counts it: the best voucher seen, what turns have cost, what running ones hold."""
-    await _principal(request)
-    if not ootle_pay.enabled() or lane < 0:
+    principal = await _principal(request)
+    if not ootle_pay.enabled() or not _OOTLE_LANE.match(lane):
         raise uhp_error(404, "not_found", "No such lane here.")
+    _ootle_own_lane(principal, lane)
     return await ootle_pay.get(_client(), f"/lanes/{lane}")
 
 
@@ -10996,7 +11047,10 @@ async def create_response(body: CreateResponseBody, request: Request):
     ootle_hold = ""
     if ootle_pay.enabled() and principal.get("via") == "api_key":
         try:
+            _ootle_own_lane(principal, str((ootle_pay.voucher_of(request.headers.get(ootle_pay.HEADER)) or {}).get("lane") or ""))
             ootle_hold = str((await ootle_pay.admit(_client(), request.headers.get(ootle_pay.HEADER)))["hold"])
+        except HTTPException:
+            raise
         except ootle_pay.Refused as e:
             raise uhp_error(402, str(e.detail.get("code") or "payment_required"), str(e), "X-Ootle-Voucher", e.detail)
         except Exception as e:  # noqa: BLE001 — nobody is paying, so nothing runs
@@ -13282,6 +13336,48 @@ async def container_file_pdf(container_id: str, file_id: str, request: Request):
 
 # ── per-org API keys (public-surface Bearer auth). Mint/list/revoke gated by the internal key
 #    (the web BFF, already behind the engine JWT + org-admin check, calls these). ───────────
+async def _store_api_key(org: str, member: str, name: str, workspace: str, workspace_default: bool) -> tuple[str, str]:
+    """A new API key, stored: → (the key, shown once; its id)."""
+    tok = "sk-hr-" + uuid.uuid4().hex + uuid.uuid4().hex
+    h = _hash_key(tok)
+    # Graph FIRST and it must succeed (raise_on_fail): the graph is the source of truth + the
+    # backstop the hot read falls to on a store miss/expiry. A silently-failed graph write would
+    # let a store-only key work for one TTL then permanently 401 (HR-INF-010 review #3).
+    await _vg_upsert("HarnessApiKey", h, {"kind": "harness_api_key", "org": org,
+                     "member": member, "name": name, "workspace": workspace,
+                     "workspace_default": "1" if workspace_default else "",
+                     "tail": tok[-4:],
+                     "revoked": "0", "created_at": str(time.time())}, raise_on_fail=True)
+    # Then dual-write the control-store hot-read doc SYNCHRONOUSLY — the key is shown once and used
+    # on the very next request. If this fails, the graph write already succeeded, so the first
+    # resolve misses -> reads the graph -> backfills; no 401 window.
+    if control_store.enabled():
+        try:
+            await control_store.apikey_put(h, org, member, workspace, workspace_default)
+        except Exception:  # noqa: BLE001 — graph is authoritative; resolve backfills on miss
+            pass
+    return tok, h
+
+
+async def _revoke_api_key(kid: str) -> None:
+    # Graph revoke FIRST and it MUST succeed (raise_on_fail): the graph is the backstop the hot
+    # read falls to when the store doc expires. A silently-failed graph revoke would let the key
+    # revive when its store tombstone lapses (HR-INF-010 review #2). Store tombstone is dual-written
+    # after — instant revocation on the hot path; the graph guarantees it stays revoked.
+    await _vg_upsert("HarnessApiKey", kid, {"revoked": "1"}, raise_on_fail=True)
+    if control_store.enabled():
+        try:
+            await control_store.apikey_revoke(kid)
+        except Exception:  # noqa: BLE001 — the graph is authoritative; the store tombstone is a fast-path
+            pass
+    # Then removed at once, with no undo (Richard's rule, 2026-10-08): the record goes, and with
+    # it the key's name and last use. Revoked first so a removal that fails still leaves it dead;
+    # the retention sweep removes what a failed removal left. A last-use stamp landing after
+    # this writes a record with no kind, which no lookup accepts and the sweep removes.
+    with contextlib.suppress(Exception):
+        await BACKING.graph.delete(kid, "HarnessApiKey")
+
+
 class KeyBody(BaseModel):
     member_id: str | None = None
     name: str | None = None
@@ -13302,26 +13398,8 @@ async def mint_key(org: str, body: KeyBody, request: Request) -> dict:
             raise uhp_error(403, "forbidden", "A key held to one workspace makes keys for that workspace only.", "workspace")
         body.workspace, body.workspace_default = held, False
         body.member_id = str(p.get("member") or "")
-    tok = "sk-hr-" + uuid.uuid4().hex + uuid.uuid4().hex
-    h = _hash_key(tok)
-    # Graph FIRST and it must succeed (raise_on_fail): the graph is the source of truth + the
-    # backstop the hot read falls to on a store miss/expiry. A silently-failed graph write would
-    # let a store-only key work for one TTL then permanently 401 (HR-INF-010 review #3).
-    await _vg_upsert("HarnessApiKey", h, {"kind": "harness_api_key", "org": org,
-                     "member": body.member_id or "", "name": body.name or "default",
-                     "workspace": body.workspace or "",
-                     "workspace_default": "1" if body.workspace_default else "",
-                     "tail": tok[-4:],
-                     "revoked": "0", "created_at": str(time.time())}, raise_on_fail=True)
-    # Then dual-write the control-store hot-read doc SYNCHRONOUSLY — the key is shown once and used
-    # on the very next request. If this fails, the graph write already succeeded, so the first
-    # resolve misses -> reads the graph -> backfills; no 401 window.
-    if control_store.enabled():
-        try:
-            await control_store.apikey_put(h, org, body.member_id or "", body.workspace or "",
-                                           bool(body.workspace_default))
-        except Exception:  # noqa: BLE001 — graph is authoritative; resolve backfills on miss
-            pass
+    tok, h = await _store_api_key(org, body.member_id or "", body.name or "default", body.workspace or "",
+                                  bool(body.workspace_default))
     return {"id": h, "org": org, "name": body.name or "default", "created_at": int(time.time()),
             "workspace": body.workspace or "", "tail": tok[-4:],
             "key": tok, "note": "store this key now; it is shown only once"}
@@ -13373,22 +13451,7 @@ async def revoke_key(org: str, kid: str, request: Request) -> dict:
     kv = await _vertex_get(kid)
     if kv and (str(kv.get("org") or "") != org or not _scope_keeps(p, kv.get("workspace"))):
         raise HTTPException(404, "key not found")
-    # Graph revoke FIRST and it MUST succeed (raise_on_fail): the graph is the backstop the hot
-    # read falls to when the store doc expires. A silently-failed graph revoke would let the key
-    # revive when its store tombstone lapses (HR-INF-010 review #2). Store tombstone is dual-written
-    # after — instant revocation on the hot path; the graph guarantees it stays revoked.
-    await _vg_upsert("HarnessApiKey", kid, {"revoked": "1"}, raise_on_fail=True)
-    if control_store.enabled():
-        try:
-            await control_store.apikey_revoke(kid)
-        except Exception:  # noqa: BLE001 — graph is authoritative; the store tombstone is a fast-path
-            pass
-    # Then removed at once, with no undo (Richard's rule, 2026-10-08): the record goes, and with
-    # it the key's name and last use. Revoked first so a removal that fails still leaves it dead;
-    # the retention sweep removes what a failed removal left. A last-use stamp landing after
-    # this writes a record with no kind, which no lookup accepts and the sweep removes.
-    with contextlib.suppress(Exception):
-        await BACKING.graph.delete(kid, "HarnessApiKey")
+    await _revoke_api_key(kid)
     return {"id": kid, "revoked": True}
 
 

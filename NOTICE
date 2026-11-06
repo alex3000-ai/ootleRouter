@@ -4,8 +4,9 @@ Copyright (c) 2026 HarnessRouter
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 
 ootleRouter is a modified version of HarnessRouter Community Edition: it adds pay-per-use through Tari Ootle
-(the ootle/ folder, gateway/ootle_pay.py, and changes to gateway/app.py, Dockerfile and docker/entrypoint.sh).
-ootle/pay/tx.mjs and ootle/pay/encoded.mjs are adapted from Ootlebook (github.com/alex3000-ai/ootlebook), MIT.
+(the ootle/ folder, gateway/ootle_pay.py, and changes to gateway/app.py, runner/server.py, ui/src/middleware.ts,
+Dockerfile and docker/entrypoint.sh). ootle/pay/ootlebook/ and ootle/pay/deployments/ are Ootlebook's client and
+deployment (github.com/alex3000-ai/ootlebook), MIT, unchanged.
 
 Apache-2.0 requires that this NOTICE file be included in redistributions; the third-party
 entries below are here for the same reason, and state the licenses of OTHER projects — they
