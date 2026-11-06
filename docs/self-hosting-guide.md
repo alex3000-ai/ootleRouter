@@ -1,6 +1,6 @@
 # Community Edition setup and operations
 
-Detailed installation, configuration, API, and deployment instructions. For the shorter five-step path, start with the [README quickstart](../README.md#quickstart). This guide retains separate image-pull and container-start steps, so its installation sequence has six steps.
+Detailed installation, configuration, API, and deployment instructions. For the shorter five-step path, start with the [README quickstart](harnessrouter.md#quickstart). This guide retains separate image-pull and container-start steps, so its installation sequence has six steps.
 
 ## Contents
 
